@@ -118,7 +118,8 @@ struct SetupGuideSection: View {
                     icon: "gearshape.2",
                     title: "Configure Router Proxy",
                     description: "Access your router's admin panel and configure the SOCKS5 proxy settings with the IP and port from this app. The router will now route all traffic through your iPhone's mobile data.",
-                    stepColor: .blue
+                    stepColor: .green,
+                    iconColor: .blue
                 )
             }
         }
@@ -137,6 +138,7 @@ struct HelpStepView: View {
     let title: String
     let description: String
     var stepColor: Color = .blue
+    var iconColor: Color? = nil
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -154,7 +156,7 @@ struct HelpStepView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: icon)
-                        .foregroundColor(stepColor)
+                        .foregroundColor(iconColor ?? stepColor)
                     Text(title)
                         .font(.subheadline)
                         .fontWeight(.semibold)
