@@ -1,0 +1,165 @@
+name: Build SOCKS5 Server IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      display_name:
+        description: "App Name"
+        default: "SOCKS5 Server"
+        required: true
+        type: string
+
+      bundle_id:
+        description: "Bundle ID"
+        default: "com.socks5server.app"
+        required: true
+        type: string
+
+      upload_artifact:
+        description: "Upload IPA as an Artifact (Public)"
+        default: true
+        required: false
+        type: boolean
+
+      catbox_upload:
+        description: "Upload IPA to Catbox.moe (URL)"
+        default: true
+        required: false
+        type: boolean
+        
+      draft_release:
+        description: "Create a draft release (Private)"
+        default: true
+        required: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build SOCKS5 Server IPA
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check Inputs
+        if: ${{ !inputs.upload_artifact && !inputs.draft_release && !inputs.catbox_upload }}
+        run: |
+          echo "No IPA output way selected. Please choose at least one."
+          exit 1
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Get App Version
+        run: |
+          cd SOCKS5Server
+          APP_VERSION=$(xcodebuild -project SOCKS5Server.xcodeproj -showBuildSettings 2>/dev/null | grep 'MARKETING_VERSION' | head -1 | awk '{print $NF}')
+          if [ -z "$APP_VERSION" ]; then
+            APP_VERSION="1.0"
+          fi
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_ENV
+
+      - name: Build iOS App
+        run: |
+          cd SOCKS5Server
+          xcodebuild -project SOCKS5Server.xcodeproj \
+            -scheme SOCKS5Server \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/SOCKS5Server.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="-" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create IPA
+        run: |
+          cd SOCKS5Server
+          mkdir -p build/Payload
+          cp -r build/SOCKS5Server.xcarchive/Products/Applications/SOCKS5Server.app build/Payload/
+          cd build
+          zip -r ../SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa Payload
+          cd ..
+          mv SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa ${{ github.workspace }}/
+
+      - name: Upload IPA to Catbox
+        if: ${{ inputs.catbox_upload }}
+        run: |
+          RESPONSE=$(curl -F "reqtype=fileupload" -F "fileToUpload=@SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa" https://catbox.moe/user/api.php)
+          CATBOX_URL=$(echo $RESPONSE | grep -o -E 'https://files.catbox.moe/[^"]*')
+          echo "Uploaded the IPA to $CATBOX_URL"
+          echo "CATBOX_URL=$CATBOX_URL" >> $GITHUB_ENV
+
+      - name: Upload IPA as an Artifact
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}
+          path: SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa
+
+      - name: Create a Draft Release
+        if: ${{ inputs.draft_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
+          name: SOCKS5 Server v${{ env.APP_VERSION }} (Build ${{ env.BUILD_NUMBER }})
+          files: SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa
+          draft: true
+          body: |
+            ## SOCKS5 Server for iOS
+            
+            **Version:** ${{ env.APP_VERSION }}
+            **Build:** ${{ env.BUILD_NUMBER }}
+            
+            ### Features
+            - Turn your iPhone into a SOCKS5 proxy server
+            - Clean and intuitive SwiftUI interface
+            - Comprehensive help menu
+            - Perfect for improving hotspot speeds through a portable router
+            
+            ### Installation
+            You can install this IPA using:
+            - AltStore
+            - Sideloadly
+            - TrollStore (if available)
+            
+            ### How to Use
+            1. Create a WiFi network from your portable router (e.g., GL.iNet)
+            2. Connect your iPhone to the router's WiFi
+            3. Configure WiFi settings to use mobile data (empty router field)
+            4. Start the SOCKS5 server in this app
+            5. Configure the proxy on your router
+
+      - name: Job Summary - Build Complete
+        run: |
+          echo -e '### 🛠️ Build SOCKS5 Server IPA Complete!' >> $GITHUB_STEP_SUMMARY
+
+      - name: Job Summary - Output the Artifact Upload
+        if: ${{ inputs.upload_artifact }}
+        run: |
+          echo -e '### 📦 Artifact Upload\n\nUpload IPA as an artifact successfully! Refresh and [Scroll down](#artifacts) to view the artifact. Note that you must be signed in to GitHub to download it.' >> $GITHUB_STEP_SUMMARY
+
+      - name: Job Summary - Output the IPA URL (Catbox Upload)
+        if: ${{ inputs.catbox_upload }}
+        run: |
+          echo -e '### 🐱 Catbox Upload\n\nUpload IPA to Catbox successfully! Here is a permanent shareable link: '$CATBOX_URL >> $GITHUB_STEP_SUMMARY
+
+      - name: Job Summary - Output a Draft Release Link
+        if: ${{ inputs.draft_release }}
+        run: |
+          echo -e '### 🚀 Draft Release\n\nDraft release has been created successfully! You can view your release here: https://github.com/${{ github.repository }}/releases' >> $GITHUB_STEP_SUMMARY
+
+      - name: Job Summary - Cleanup
+        run: |
+          echo -e '### 🧹 Cleanup\n\nYou can remove previous GitHub Actions run here: https://github.com/${{ github.repository }}/actions/workflows/delete-old-workflows-run.yml\nAnd if you want to delete old draft releases: https://github.com/${{ github.repository }}/actions/workflows/delete-old-draft-releases.yml' >> $GITHUB_STEP_SUMMARY
