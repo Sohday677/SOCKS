@@ -259,9 +259,17 @@ struct ProxyConfigCard: View {
                             if filtered != newValue {
                                 portText = filtered
                             }
-                            // Update port if valid
+                            // Update port if valid, otherwise keep showing the input
                             if let port = Int(filtered), port > 0, port <= 65535 {
                                 serverManager.port = port
+                            }
+                        }
+                        .onSubmit {
+                            // On submit, validate and reset to current port if invalid
+                            if let port = Int(portText), port > 0, port <= 65535 {
+                                serverManager.port = port
+                            } else {
+                                portText = String(serverManager.port)
                             }
                         }
                 }
@@ -292,6 +300,12 @@ struct ProxyConfigCard: View {
         )
         .onAppear {
             portText = String(serverManager.port)
+        }
+        .onChange(of: serverManager.port) { newPort in
+            // Sync text field when port changes externally
+            if !serverManager.isRunning {
+                portText = String(newPort)
+            }
         }
     }
 }

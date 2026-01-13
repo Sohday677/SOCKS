@@ -26,10 +26,13 @@ class SOCKS5ServerManager: ObservableObject {
     @Published var uploadSpeed: Double = 0.0  // Mbps
     @Published var downloadSpeed: Double = 0.0  // Mbps
     
-    // Speed calculation
+    // Speed calculation - use internal counters to avoid main queue dispatches per packet
     private var lastUploadBytes: Int64 = 0
     private var lastDownloadBytes: Int64 = 0
     private var speedTimer: Timer?
+    private var pendingUploadBytes: Int64 = 0
+    private var pendingDownloadBytes: Int64 = 0
+    private let bytesLock = NSLock()
     
     // MARK: - Private Properties
     private var listener: NWListener?
@@ -353,6 +356,8 @@ class SOCKS5ServerManager: ObservableObject {
     
     private func relayWithTracking(from source: NWConnection, to destination: NWConnection, isUpload: Bool) {
         source.receive(minimumIncompleteLength: 1, maximumLength: Self.relayBufferSize) { [weak self] data, _, isComplete, error in
+            guard let self = self else { return }
+            
             if let error = error {
                 print("Relay receive error: \(error)")
                 source.cancel()
@@ -361,16 +366,16 @@ class SOCKS5ServerManager: ObservableObject {
             }
             
             if let data = data, !data.isEmpty {
-                // Track bytes
-                DispatchQueue.main.async {
-                    if isUpload {
-                        self?.uploadBytes += Int64(data.count)
-                    } else {
-                        self?.downloadBytes += Int64(data.count)
-                    }
+                // Track bytes using lock for thread safety - avoids main queue dispatch per packet
+                self.bytesLock.lock()
+                if isUpload {
+                    self.pendingUploadBytes += Int64(data.count)
+                } else {
+                    self.pendingDownloadBytes += Int64(data.count)
                 }
+                self.bytesLock.unlock()
                 
-                destination.send(content: data, completion: .contentProcessed { error in
+                destination.send(content: data, completion: .contentProcessed { [weak self] error in
                     if let error = error {
                         print("Relay send error: \(error)")
                         source.cancel()
@@ -386,7 +391,7 @@ class SOCKS5ServerManager: ObservableObject {
                 source.cancel()
                 destination.cancel()
             } else {
-                self?.relayWithTracking(from: source, to: destination, isUpload: isUpload)
+                self.relayWithTracking(from: source, to: destination, isUpload: isUpload)
             }
         }
     }
@@ -458,6 +463,11 @@ class SOCKS5ServerManager: ObservableObject {
     // MARK: - Stats and Speed Tracking
     
     private func resetStats() {
+        bytesLock.lock()
+        pendingUploadBytes = 0
+        pendingDownloadBytes = 0
+        bytesLock.unlock()
+        
         uploadBytes = 0
         downloadBytes = 0
         lastUploadBytes = 0
@@ -467,19 +477,36 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func startSpeedTimer() {
-        speedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.calculateSpeed()
+        // Create timer on main run loop for consistent behavior
+        DispatchQueue.main.async { [weak self] in
+            self?.speedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                self?.calculateSpeed()
+            }
         }
     }
     
     private func stopSpeedTimer() {
-        speedTimer?.invalidate()
-        speedTimer = nil
+        DispatchQueue.main.async { [weak self] in
+            self?.speedTimer?.invalidate()
+            self?.speedTimer = nil
+        }
     }
     
     private func calculateSpeed() {
+        // Collect pending bytes under lock
+        bytesLock.lock()
+        let pendingUp = pendingUploadBytes
+        let pendingDown = pendingDownloadBytes
+        pendingUploadBytes = 0
+        pendingDownloadBytes = 0
+        bytesLock.unlock()
+        
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            
+            // Add pending bytes to totals
+            self.uploadBytes += pendingUp
+            self.downloadBytes += pendingDown
             
             // Calculate bytes transferred in the last second
             let uploadDelta = self.uploadBytes - self.lastUploadBytes
