@@ -10,9 +10,12 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 ## ✨ Features
 
 - **Native SOCKS5 Server**: Full implementation of the SOCKS5 protocol
-- **Clean SwiftUI Interface**: Modern, intuitive design
+- **Clean SwiftUI Interface**: Modern, intuitive design with live statistics
 - **One-Tap Control**: Start/Stop server with a single tap
 - **Auto IP Detection**: Automatically detects your local network IP
+- **Live Data Stats**: Real-time upload/download speed monitoring in Mbps
+- **Auto-Start Option**: Optionally start the server automatically when the app opens
+- **Background Modes**: Multiple options to keep the app active (Location, Silent Audio)
 - **Comprehensive Help Menu**: Step-by-step setup guide with GL.iNet router instructions
 - **Copy Configuration**: Easy copy of proxy settings to clipboard
 
@@ -21,8 +24,10 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 The app features a clean, card-based interface with:
 - Server status display (running/stopped indicator)
 - IP address and port information
+- Live upload/download statistics (Mbps)
 - Configuration options
 - Start/Stop control button
+- Settings page for auto-start and background options
 - Help menu with setup instructions
 
 ## 🚀 How to Use
@@ -123,9 +128,11 @@ SOCKS5Server/
 │   ├── Info.plist               # App configuration
 │   ├── Views/
 │   │   ├── ContentView.swift    # Main UI
-│   │   └── HelpView.swift       # Help menu
+│   │   ├── HelpView.swift       # Help menu
+│   │   └── SettingsView.swift   # Settings page
 │   ├── Server/
-│   │   └── SOCKS5ServerManager.swift  # SOCKS5 implementation
+│   │   ├── SOCKS5ServerManager.swift  # SOCKS5 implementation
+│   │   └── SettingsManager.swift      # App settings
 │   └── Assets.xcassets/         # App assets
 └── README.md
 ```
@@ -143,7 +150,3 @@ This project is available under the MIT License.
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📞 Support
-
-If you encounter any issues or have questions, please open an issue on GitHub.

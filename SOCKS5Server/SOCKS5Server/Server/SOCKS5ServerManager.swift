@@ -8,6 +8,7 @@
 import Foundation
 import Network
 import Combine
+import UIKit
 
 class SOCKS5ServerManager: ObservableObject {
     // MARK: - Constants
@@ -19,8 +20,25 @@ class SOCKS5ServerManager: ObservableObject {
     // MARK: - Published Properties
     @Published var isRunning = false
     @Published var ipAddress = SOCKS5ServerManager.fallbackIPAddress
-    @Published var port: Int = 1080
+    @Published var port: Int = 4884
     @Published var connectedClients = 0
+    @Published var uploadBytes: Int64 = 0
+    @Published var downloadBytes: Int64 = 0
+    @Published var uploadSpeed: Double = 0.0  // Mbps
+    @Published var downloadSpeed: Double = 0.0  // Mbps
+    
+    // Speed calculation - use internal counters to avoid main queue dispatches per packet
+    private var lastUploadBytes: Int64 = 0
+    private var lastDownloadBytes: Int64 = 0
+    private var speedTimer: Timer?
+    private var pendingUploadBytes: Int64 = 0
+    private var pendingDownloadBytes: Int64 = 0
+    private let bytesLock = NSLock()
+    
+    // App lifecycle - only update UI when in foreground for optimization
+    private var isInForeground = true
+    private var foregroundObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
     
     // MARK: - Private Properties
     private var listener: NWListener?
@@ -29,12 +47,42 @@ class SOCKS5ServerManager: ObservableObject {
     
     init() {
         updateIPAddress()
+        setupAppLifecycleObservers()
+    }
+    
+    deinit {
+        if let foregroundObserver = foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        if let backgroundObserver = backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
+        }
+    }
+    
+    private func setupAppLifecycleObservers() {
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInForeground = true
+        }
+        
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInForeground = false
+        }
     }
     
     func startServer() {
         guard !isRunning else { return }
         
         updateIPAddress()
+        resetStats()
+        startSpeedTimer()
         
         do {
             let parameters = NWParameters.tcp
@@ -47,7 +95,7 @@ class SOCKS5ServerManager: ObservableObject {
                     switch state {
                     case .ready:
                         self?.isRunning = true
-                        print("SOCKS5 Server started on port \(self?.port ?? 1080)")
+                        print("SOCKS5 Server started on port \(self?.port ?? 4884)")
                     case .failed(let error):
                         print("Server failed: \(error)")
                         self?.isRunning = false
@@ -74,6 +122,8 @@ class SOCKS5ServerManager: ObservableObject {
         listener?.cancel()
         listener = nil
         
+        stopSpeedTimer()
+        
         for connection in connections {
             connection.cancel()
         }
@@ -82,6 +132,8 @@ class SOCKS5ServerManager: ObservableObject {
         DispatchQueue.main.async {
             self.isRunning = false
             self.connectedClients = 0
+            self.uploadSpeed = 0.0
+            self.downloadSpeed = 0.0
         }
     }
     
@@ -330,10 +382,52 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func startBidirectionalRelay(client: NWConnection, target: NWConnection) {
-        // Client -> Target
-        relay(from: client, to: target)
-        // Target -> Client
-        relay(from: target, to: client)
+        // Client -> Target (upload: data going out from proxy to target)
+        relayWithTracking(from: client, to: target, isUpload: true)
+        // Target -> Client (download: data coming back from target to client)
+        relayWithTracking(from: target, to: client, isUpload: false)
+    }
+    
+    private func relayWithTracking(from source: NWConnection, to destination: NWConnection, isUpload: Bool) {
+        source.receive(minimumIncompleteLength: 1, maximumLength: Self.relayBufferSize) { [weak self] data, _, isComplete, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("Relay receive error: \(error)")
+                source.cancel()
+                destination.cancel()
+                return
+            }
+            
+            if let data = data, !data.isEmpty {
+                // Track bytes using lock for thread safety - avoids main queue dispatch per packet
+                self.bytesLock.lock()
+                if isUpload {
+                    self.pendingUploadBytes += Int64(data.count)
+                } else {
+                    self.pendingDownloadBytes += Int64(data.count)
+                }
+                self.bytesLock.unlock()
+                
+                destination.send(content: data, completion: .contentProcessed { [weak self] error in
+                    if let error = error {
+                        print("Relay send error: \(error)")
+                        source.cancel()
+                        destination.cancel()
+                        return
+                    }
+                    
+                    if !isComplete {
+                        self?.relayWithTracking(from: source, to: destination, isUpload: isUpload)
+                    }
+                })
+            } else if isComplete {
+                source.cancel()
+                destination.cancel()
+            } else {
+                self.relayWithTracking(from: source, to: destination, isUpload: isUpload)
+            }
+        }
     }
     
     private func relay(from source: NWConnection, to destination: NWConnection) {
@@ -398,5 +492,100 @@ class SOCKS5ServerManager: ObservableObject {
         }
         
         return address
+    }
+    
+    // MARK: - Stats and Speed Tracking
+    
+    private func resetStats() {
+        bytesLock.lock()
+        pendingUploadBytes = 0
+        pendingDownloadBytes = 0
+        bytesLock.unlock()
+        
+        uploadBytes = 0
+        downloadBytes = 0
+        lastUploadBytes = 0
+        lastDownloadBytes = 0
+        uploadSpeed = 0.0
+        downloadSpeed = 0.0
+    }
+    
+    private func startSpeedTimer() {
+        // Create timer on main run loop for consistent behavior
+        DispatchQueue.main.async { [weak self] in
+            self?.speedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                self?.calculateSpeed()
+            }
+        }
+    }
+    
+    private func stopSpeedTimer() {
+        DispatchQueue.main.async { [weak self] in
+            self?.speedTimer?.invalidate()
+            self?.speedTimer = nil
+        }
+    }
+    
+    private func calculateSpeed() {
+        // Collect pending bytes under lock - always track bytes even in background
+        bytesLock.lock()
+        let pendingUp = pendingUploadBytes
+        let pendingDown = pendingDownloadBytes
+        pendingUploadBytes = 0
+        pendingDownloadBytes = 0
+        bytesLock.unlock()
+        
+        // Skip UI updates when app is in background for optimization
+        guard isInForeground else {
+            // Still accumulate bytes internally for when we return to foreground
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.uploadBytes += pendingUp
+                self.downloadBytes += pendingDown
+                self.lastUploadBytes = self.uploadBytes
+                self.lastDownloadBytes = self.downloadBytes
+            }
+            return
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Add pending bytes to totals
+            self.uploadBytes += pendingUp
+            self.downloadBytes += pendingDown
+            
+            // Calculate bytes transferred in the last second
+            let uploadDelta = self.uploadBytes - self.lastUploadBytes
+            let downloadDelta = self.downloadBytes - self.lastDownloadBytes
+            
+            // Convert to Mbps (megabits per second)
+            // bytes * 8 (to bits) / 1,000,000 (to megabits)
+            self.uploadSpeed = Double(uploadDelta) * 8.0 / 1_000_000.0
+            self.downloadSpeed = Double(downloadDelta) * 8.0 / 1_000_000.0
+            
+            self.lastUploadBytes = self.uploadBytes
+            self.lastDownloadBytes = self.downloadBytes
+        }
+    }
+    
+    func formattedUploadBytes() -> String {
+        return formatBytes(uploadBytes)
+    }
+    
+    func formattedDownloadBytes() -> String {
+        return formatBytes(downloadBytes)
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        if bytes < 1024 {
+            return "\(bytes) B"
+        } else if bytes < 1024 * 1024 {
+            return String(format: "%.1f KB", Double(bytes) / 1024.0)
+        } else if bytes < 1024 * 1024 * 1024 {
+            return String(format: "%.2f MB", Double(bytes) / (1024.0 * 1024.0))
+        } else {
+            return String(format: "%.2f GB", Double(bytes) / (1024.0 * 1024.0 * 1024.0))
+        }
     }
 }
