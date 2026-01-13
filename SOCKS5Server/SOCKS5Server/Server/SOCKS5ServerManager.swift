@@ -8,6 +8,7 @@
 import Foundation
 import Network
 import Combine
+import UIKit
 
 class SOCKS5ServerManager: ObservableObject {
     // MARK: - Constants
@@ -34,6 +35,11 @@ class SOCKS5ServerManager: ObservableObject {
     private var pendingDownloadBytes: Int64 = 0
     private let bytesLock = NSLock()
     
+    // App lifecycle - only update UI when in foreground for optimization
+    private var isInForeground = true
+    private var foregroundObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
+    
     // MARK: - Private Properties
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -41,6 +47,34 @@ class SOCKS5ServerManager: ObservableObject {
     
     init() {
         updateIPAddress()
+        setupAppLifecycleObservers()
+    }
+    
+    deinit {
+        if let foregroundObserver = foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        if let backgroundObserver = backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
+        }
+    }
+    
+    private func setupAppLifecycleObservers() {
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInForeground = true
+        }
+        
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInForeground = false
+        }
     }
     
     func startServer() {
@@ -493,13 +527,26 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func calculateSpeed() {
-        // Collect pending bytes under lock
+        // Collect pending bytes under lock - always track bytes even in background
         bytesLock.lock()
         let pendingUp = pendingUploadBytes
         let pendingDown = pendingDownloadBytes
         pendingUploadBytes = 0
         pendingDownloadBytes = 0
         bytesLock.unlock()
+        
+        // Skip UI updates when app is in background for optimization
+        guard isInForeground else {
+            // Still accumulate bytes internally for when we return to foreground
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.uploadBytes += pendingUp
+                self.downloadBytes += pendingDown
+                self.lastUploadBytes = self.uploadBytes
+                self.lastDownloadBytes = self.downloadBytes
+            }
+            return
+        }
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }

@@ -65,13 +65,13 @@ class SettingsManager: ObservableObject {
             UserDefaults.standard.set(true, forKey: Keys.autoStartServer)
         }
         if UserDefaults.standard.object(forKey: Keys.backgroundAwakeMethod) == nil {
-            UserDefaults.standard.set(BackgroundAwakeMethod.location.rawValue, forKey: Keys.backgroundAwakeMethod)
+            UserDefaults.standard.set(BackgroundAwakeMethod.audio.rawValue, forKey: Keys.backgroundAwakeMethod)
         }
         
         // Load settings
         self.autoStartServer = UserDefaults.standard.bool(forKey: Keys.autoStartServer)
         
-        let methodString = UserDefaults.standard.string(forKey: Keys.backgroundAwakeMethod) ?? BackgroundAwakeMethod.location.rawValue
-        self.backgroundAwakeMethod = BackgroundAwakeMethod(rawValue: methodString) ?? .location
+        let methodString = UserDefaults.standard.string(forKey: Keys.backgroundAwakeMethod) ?? BackgroundAwakeMethod.audio.rawValue
+        self.backgroundAwakeMethod = BackgroundAwakeMethod(rawValue: methodString) ?? .audio
     }
 }
