@@ -10,11 +10,13 @@ import SwiftUI
 @main
 struct SOCKS5ServerApp: App {
     @StateObject private var serverManager = SOCKS5ServerManager()
+    @StateObject private var settingsManager = SettingsManager()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(serverManager)
+                .environmentObject(settingsManager)
         }
     }
 }

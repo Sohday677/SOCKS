@@ -19,8 +19,17 @@ class SOCKS5ServerManager: ObservableObject {
     // MARK: - Published Properties
     @Published var isRunning = false
     @Published var ipAddress = SOCKS5ServerManager.fallbackIPAddress
-    @Published var port: Int = 1080
+    @Published var port: Int = 4884
     @Published var connectedClients = 0
+    @Published var uploadBytes: Int64 = 0
+    @Published var downloadBytes: Int64 = 0
+    @Published var uploadSpeed: Double = 0.0  // Mbps
+    @Published var downloadSpeed: Double = 0.0  // Mbps
+    
+    // Speed calculation
+    private var lastUploadBytes: Int64 = 0
+    private var lastDownloadBytes: Int64 = 0
+    private var speedTimer: Timer?
     
     // MARK: - Private Properties
     private var listener: NWListener?
@@ -35,6 +44,8 @@ class SOCKS5ServerManager: ObservableObject {
         guard !isRunning else { return }
         
         updateIPAddress()
+        resetStats()
+        startSpeedTimer()
         
         do {
             let parameters = NWParameters.tcp
@@ -47,7 +58,7 @@ class SOCKS5ServerManager: ObservableObject {
                     switch state {
                     case .ready:
                         self?.isRunning = true
-                        print("SOCKS5 Server started on port \(self?.port ?? 1080)")
+                        print("SOCKS5 Server started on port \(self?.port ?? 4884)")
                     case .failed(let error):
                         print("Server failed: \(error)")
                         self?.isRunning = false
@@ -74,6 +85,8 @@ class SOCKS5ServerManager: ObservableObject {
         listener?.cancel()
         listener = nil
         
+        stopSpeedTimer()
+        
         for connection in connections {
             connection.cancel()
         }
@@ -82,6 +95,8 @@ class SOCKS5ServerManager: ObservableObject {
         DispatchQueue.main.async {
             self.isRunning = false
             self.connectedClients = 0
+            self.uploadSpeed = 0.0
+            self.downloadSpeed = 0.0
         }
     }
     
@@ -330,10 +345,50 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func startBidirectionalRelay(client: NWConnection, target: NWConnection) {
-        // Client -> Target
-        relay(from: client, to: target)
-        // Target -> Client
-        relay(from: target, to: client)
+        // Client -> Target (upload: data going out from proxy to target)
+        relayWithTracking(from: client, to: target, isUpload: true)
+        // Target -> Client (download: data coming back from target to client)
+        relayWithTracking(from: target, to: client, isUpload: false)
+    }
+    
+    private func relayWithTracking(from source: NWConnection, to destination: NWConnection, isUpload: Bool) {
+        source.receive(minimumIncompleteLength: 1, maximumLength: Self.relayBufferSize) { [weak self] data, _, isComplete, error in
+            if let error = error {
+                print("Relay receive error: \(error)")
+                source.cancel()
+                destination.cancel()
+                return
+            }
+            
+            if let data = data, !data.isEmpty {
+                // Track bytes
+                DispatchQueue.main.async {
+                    if isUpload {
+                        self?.uploadBytes += Int64(data.count)
+                    } else {
+                        self?.downloadBytes += Int64(data.count)
+                    }
+                }
+                
+                destination.send(content: data, completion: .contentProcessed { error in
+                    if let error = error {
+                        print("Relay send error: \(error)")
+                        source.cancel()
+                        destination.cancel()
+                        return
+                    }
+                    
+                    if !isComplete {
+                        self?.relayWithTracking(from: source, to: destination, isUpload: isUpload)
+                    }
+                })
+            } else if isComplete {
+                source.cancel()
+                destination.cancel()
+            } else {
+                self?.relayWithTracking(from: source, to: destination, isUpload: isUpload)
+            }
+        }
     }
     
     private func relay(from source: NWConnection, to destination: NWConnection) {
@@ -398,5 +453,65 @@ class SOCKS5ServerManager: ObservableObject {
         }
         
         return address
+    }
+    
+    // MARK: - Stats and Speed Tracking
+    
+    private func resetStats() {
+        uploadBytes = 0
+        downloadBytes = 0
+        lastUploadBytes = 0
+        lastDownloadBytes = 0
+        uploadSpeed = 0.0
+        downloadSpeed = 0.0
+    }
+    
+    private func startSpeedTimer() {
+        speedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.calculateSpeed()
+        }
+    }
+    
+    private func stopSpeedTimer() {
+        speedTimer?.invalidate()
+        speedTimer = nil
+    }
+    
+    private func calculateSpeed() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Calculate bytes transferred in the last second
+            let uploadDelta = self.uploadBytes - self.lastUploadBytes
+            let downloadDelta = self.downloadBytes - self.lastDownloadBytes
+            
+            // Convert to Mbps (megabits per second)
+            // bytes * 8 (to bits) / 1,000,000 (to megabits)
+            self.uploadSpeed = Double(uploadDelta) * 8.0 / 1_000_000.0
+            self.downloadSpeed = Double(downloadDelta) * 8.0 / 1_000_000.0
+            
+            self.lastUploadBytes = self.uploadBytes
+            self.lastDownloadBytes = self.downloadBytes
+        }
+    }
+    
+    func formattedUploadBytes() -> String {
+        return formatBytes(uploadBytes)
+    }
+    
+    func formattedDownloadBytes() -> String {
+        return formatBytes(downloadBytes)
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        if bytes < 1024 {
+            return "\(bytes) B"
+        } else if bytes < 1024 * 1024 {
+            return String(format: "%.1f KB", Double(bytes) / 1024.0)
+        } else if bytes < 1024 * 1024 * 1024 {
+            return String(format: "%.2f MB", Double(bytes) / (1024.0 * 1024.0))
+        } else {
+            return String(format: "%.2f GB", Double(bytes) / (1024.0 * 1024.0 * 1024.0))
+        }
     }
 }
