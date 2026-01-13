@@ -10,11 +10,19 @@ import Network
 import Combine
 
 class SOCKS5ServerManager: ObservableObject {
+    // MARK: - Constants
+    private static let fallbackIPAddress = "0.0.0.0"
+    private static let relayBufferSize = 65536
+    private static let wifiInterfaceName = "en0"
+    private static let bridgeInterfacePrefix = "bridge"
+    
+    // MARK: - Published Properties
     @Published var isRunning = false
-    @Published var ipAddress = "0.0.0.0"
+    @Published var ipAddress = SOCKS5ServerManager.fallbackIPAddress
     @Published var port: Int = 1080
     @Published var connectedClients = 0
     
+    // MARK: - Private Properties
     private var listener: NWListener?
     private var connections: [NWConnection] = []
     private let queue = DispatchQueue(label: "com.socks5server.network", qos: .userInteractive)
@@ -329,7 +337,7 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func relay(from source: NWConnection, to destination: NWConnection) {
-        source.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
+        source.receive(minimumIncompleteLength: 1, maximumLength: Self.relayBufferSize) { [weak self] data, _, isComplete, error in
             if let error = error {
                 print("Relay receive error: \(error)")
                 source.cancel()
@@ -360,7 +368,7 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func updateIPAddress() {
-        ipAddress = getWiFiAddress() ?? "0.0.0.0"
+        ipAddress = getWiFiAddress() ?? Self.fallbackIPAddress
     }
     
     private func getWiFiAddress() -> String? {
@@ -377,7 +385,7 @@ class SOCKS5ServerManager: ObservableObject {
                 let addrFamily = interface.ifa_addr.pointee.sa_family
                 if addrFamily == UInt8(AF_INET) {
                     let name = String(cString: interface.ifa_name)
-                    if name == "en0" || name.hasPrefix("bridge") {
+                    if name == Self.wifiInterfaceName || name.hasPrefix(Self.bridgeInterfacePrefix) {
                         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                         getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
                                     &hostname, socklen_t(hostname.count),
