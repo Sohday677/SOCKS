@@ -118,7 +118,7 @@ struct SetupGuideSection: View {
                     icon: "gearshape.2",
                     title: "Configure Router Proxy",
                     description: "Access your router's admin panel and configure the SOCKS5 proxy settings with the IP and port from this app. The router will now route all traffic through your iPhone's mobile data.",
-                    stepColor: .green
+                    stepColor: .blue
                 )
             }
         }
