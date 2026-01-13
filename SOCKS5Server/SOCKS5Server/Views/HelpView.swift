@@ -85,8 +85,7 @@ struct SetupGuideSection: View {
                     stepNumber: 1,
                     icon: "wifi.router",
                     title: "Create WiFi Network",
-                    description: "Create a WiFi network from your portable router (e.g., GL.iNet). Connect to its admin panel and configure the WiFi settings.",
-                    imageName: "RouterIcon"
+                    description: "Create a WiFi network from your portable router. Connect to its admin panel and configure the WiFi settings."
                 )
                 
                 // Step 2
@@ -118,7 +117,8 @@ struct SetupGuideSection: View {
                     stepNumber: 5,
                     icon: "gearshape.2",
                     title: "Configure Router Proxy",
-                    description: "Access your router's admin panel and configure the SOCKS5 proxy settings with the IP and port from this app. The router will now route all traffic through your iPhone's mobile data."
+                    description: "Access your router's admin panel and configure the SOCKS5 proxy settings with the IP and port from this app. The router will now route all traffic through your iPhone's mobile data.",
+                    stepColor: .green
                 )
             }
         }
@@ -136,14 +136,14 @@ struct HelpStepView: View {
     let icon: String
     let title: String
     let description: String
-    var imageName: String? = nil
+    var stepColor: Color = .blue
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             // Step Number Circle
             ZStack {
                 Circle()
-                    .fill(Color.blue)
+                    .fill(stepColor)
                     .frame(width: 32, height: 32)
                 Text("\(stepNumber)")
                     .font(.callout)
@@ -154,7 +154,7 @@ struct HelpStepView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: icon)
-                        .foregroundColor(.blue)
+                        .foregroundColor(stepColor)
                     Text(title)
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -163,36 +163,7 @@ struct HelpStepView: View {
                 Text(description)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
-                // Show router icon if available
-                if let imageName = imageName {
-                    RouterIconView()
-                        .padding(.top, 4)
-                }
             }
-        }
-    }
-}
-
-// MARK: - Router Icon View
-struct RouterIconView: View {
-    var body: some View {
-        HStack {
-            // GL.iNet style router representation
-            VStack(spacing: 4) {
-                Image(systemName: "wifi.router.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.orange)
-                Text("GL.iNet Router")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-            )
         }
     }
 }
