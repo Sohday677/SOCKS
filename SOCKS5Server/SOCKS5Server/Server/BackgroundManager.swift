@@ -34,7 +34,6 @@ class BackgroundManager: NSObject, ObservableObject {
         locationManager?.desiredAccuracy = kCLLocationAccuracyThreeKilometers
         locationManager?.distanceFilter = 1000 // 1km minimum distance for updates
         locationManager?.pausesLocationUpdatesAutomatically = false
-        locationManager?.allowsBackgroundLocationUpdates = true
         
         // Get initial authorization status
         locationAuthorizationStatus = locationManager?.authorizationStatus ?? .notDetermined
@@ -86,12 +85,16 @@ class BackgroundManager: NSObject, ObservableObject {
             return
         }
         
+        // Enable background location updates only when starting location updates
+        // This is safe because we've verified authorization and background modes are in Info.plist
+        locationManager?.allowsBackgroundLocationUpdates = true
         locationManager?.startUpdatingLocation()
         print("BackgroundManager: Started location updates for background mode")
     }
     
     private func stopLocationUpdates() {
         locationManager?.stopUpdatingLocation()
+        locationManager?.allowsBackgroundLocationUpdates = false
         print("BackgroundManager: Stopped location updates")
     }
     
@@ -114,8 +117,8 @@ class BackgroundManager: NSObject, ObservableObject {
         // Play silent audio
         audioPlayer?.play()
         
-        // Set up timer to ensure audio keeps playing
-        silentAudioTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // Set up timer to ensure audio keeps playing (check every 15 seconds to save battery)
+        silentAudioTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
             self?.ensureAudioPlaying()
         }
         
@@ -158,7 +161,7 @@ class BackgroundManager: NSObject, ObservableObject {
         do {
             audioPlayer = try AVAudioPlayer(data: wavData)
             audioPlayer?.numberOfLoops = -1 // Loop indefinitely
-            audioPlayer?.volume = 0.01 // Very low volume
+            audioPlayer?.volume = 0.0 // Completely silent
             audioPlayer?.prepareToPlay()
         } catch {
             print("BackgroundManager: Failed to create audio player: \(error)")

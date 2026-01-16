@@ -123,7 +123,7 @@ struct SettingsView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)
                     .font(.caption2)
-                Text("Only while using - enable 'Always' in Settings")
+                Text("Enable 'Always' in Settings > Privacy > Location")
                     .font(.caption2)
                     .foregroundColor(.orange)
             case .denied, .restricted:
