@@ -18,7 +18,7 @@ enum BackgroundAwakeMethod: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .location:
-            return "Uses location services to keep the app active. Most reliable but uses more battery."
+            return "Uses location services with Dynamic Island display. Most reliable but uses more battery."
         case .audio:
             return "Plays silent audio to prevent the app from being suspended. Lower battery usage."
         case .none:

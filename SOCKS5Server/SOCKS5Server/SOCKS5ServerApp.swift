@@ -14,6 +14,9 @@ struct SOCKS5ServerApp: App {
     @StateObject private var settingsManager = SettingsManager()
     @StateObject private var backgroundManager = BackgroundManager()
     
+    /// Track previous running state for notification purposes
+    @State private var wasRunning = false
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -22,14 +25,35 @@ struct SOCKS5ServerApp: App {
                 .environmentObject(backgroundManager)
                 .onReceive(serverManager.$isRunning) { isRunning in
                     if isRunning {
-                        backgroundManager.startBackgroundMethod(settingsManager.backgroundAwakeMethod)
+                        // Start background method with IP and port for Live Activity
+                        backgroundManager.startBackgroundMethod(
+                            settingsManager.backgroundAwakeMethod,
+                            ipAddress: serverManager.ipAddress,
+                            port: serverManager.port
+                        )
                     } else {
-                        backgroundManager.stopBackgroundMethod()
+                        // Send disconnection notification if server was previously running
+                        backgroundManager.stopBackgroundMethod(sendNotification: wasRunning)
                     }
+                    wasRunning = isRunning
                 }
                 .onReceive(settingsManager.$backgroundAwakeMethod) { method in
                     if serverManager.isRunning {
-                        backgroundManager.startBackgroundMethod(method)
+                        backgroundManager.startBackgroundMethod(
+                            method,
+                            ipAddress: serverManager.ipAddress,
+                            port: serverManager.port
+                        )
+                    }
+                }
+                .onReceive(serverManager.$connectedClients) { clients in
+                    // Update Live Activity when client count changes
+                    if serverManager.isRunning && settingsManager.backgroundAwakeMethod == .location {
+                        backgroundManager.updateLiveActivity(
+                            ipAddress: serverManager.ipAddress,
+                            port: serverManager.port,
+                            connectedClients: clients
+                        )
                     }
                 }
         }
