@@ -14,6 +14,14 @@ import ActivityKit
 import UserNotifications
 
 class BackgroundManager: NSObject, ObservableObject {
+    // MARK: - Constants
+    private enum Constants {
+        static let disconnectionNotificationId = "proxy-disconnection"
+        static let stoppedStatusText = "Stopped"
+        static let stoppedIPAddress = "—"
+        static let stoppedPort = 0
+    }
+    
     // MARK: - Published Properties
     @Published var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var notificationPermissionGranted: Bool = false
@@ -241,6 +249,18 @@ class BackgroundManager: NSObject, ObservableObject {
     
     // MARK: - Live Activity (Dynamic Island) for Location Mode
     
+    /// Helper method to format status text for Live Activity
+    /// - Parameters:
+    ///   - connectedClients: Number of connected clients
+    ///   - isActive: Whether the server is active
+    /// - Returns: Formatted status text
+    private func formatStatusText(connectedClients: Int, isActive: Bool) -> String {
+        if !isActive {
+            return "Disconnected"
+        }
+        return connectedClients > 0 ? "\(connectedClients) client\(connectedClients == 1 ? "" : "s")" : "Active"
+    }
+    
     /// Start Live Activity for Dynamic Island navigation-style display
     /// - Parameters:
     ///   - ipAddress: The IP address of the proxy server
@@ -260,10 +280,9 @@ class BackgroundManager: NSObject, ObservableObject {
             endLiveActivity()
             
             let attributes = ProxyActivityAttributes(serverName: "SOCKS5 Proxy")
-            let statusText = connectedClients > 0 ? "\(connectedClients) client\(connectedClients == 1 ? "" : "s")" : "Active"
             let contentState = ProxyActivityAttributes.ContentState(
                 isActive: true,
-                statusText: statusText,
+                statusText: formatStatusText(connectedClients: connectedClients, isActive: true),
                 ipAddress: ipAddress,
                 port: port
             )
@@ -292,10 +311,9 @@ class BackgroundManager: NSObject, ObservableObject {
         if #available(iOS 16.1, *) {
             guard let activity = currentActivity else { return }
             
-            let statusText = isActive ? (connectedClients > 0 ? "\(connectedClients) client\(connectedClients == 1 ? "" : "s")" : "Active") : "Disconnected"
             let contentState = ProxyActivityAttributes.ContentState(
                 isActive: isActive,
-                statusText: statusText,
+                statusText: formatStatusText(connectedClients: connectedClients, isActive: isActive),
                 ipAddress: ipAddress,
                 port: port
             )
@@ -313,9 +331,9 @@ class BackgroundManager: NSObject, ObservableObject {
             
             let finalState = ProxyActivityAttributes.ContentState(
                 isActive: false,
-                statusText: "Stopped",
-                ipAddress: "—",
-                port: 0
+                statusText: Constants.stoppedStatusText,
+                ipAddress: Constants.stoppedIPAddress,
+                port: Constants.stoppedPort
             )
             
             Task {
@@ -334,8 +352,9 @@ class BackgroundManager: NSObject, ObservableObject {
     /// - Parameter reason: Optional reason for the disconnection
     func sendDisconnectionNotification(reason: String? = nil) {
         guard notificationPermissionGranted else {
-            // Request permission if not granted yet
-            requestNotificationPermission()
+            // Permission not granted, cannot send notification
+            // Don't request permission here as it's too late - it should have been requested earlier
+            print("BackgroundManager: Cannot send notification - permission not granted")
             return
         }
         
@@ -345,8 +364,9 @@ class BackgroundManager: NSObject, ObservableObject {
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         
+        // Use fixed identifier to allow replacing previous notification
         let request = UNNotificationRequest(
-            identifier: "proxy-disconnection-\(UUID().uuidString)",
+            identifier: Constants.disconnectionNotificationId,
             content: content,
             trigger: nil // Deliver immediately
         )
