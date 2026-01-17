@@ -6,9 +6,11 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct SettingsView: View {
     @EnvironmentObject var settingsManager: SettingsManager
+    @EnvironmentObject var backgroundManager: BackgroundManager
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
@@ -39,7 +41,7 @@ struct SettingsView: View {
                 Section {
                     ForEach(BackgroundAwakeMethod.allCases) { method in
                         Button(action: {
-                            settingsManager.backgroundAwakeMethod = method
+                            selectBackgroundMethod(method)
                         }) {
                             HStack(spacing: 12) {
                                 Image(systemName: method.icon)
@@ -55,6 +57,11 @@ struct SettingsView: View {
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                         .lineLimit(2)
+                                    
+                                    // Show location authorization status if location method
+                                    if method == .location {
+                                        locationStatusView
+                                    }
                                 }
                                 
                                 Spacer()
@@ -99,6 +106,55 @@ struct SettingsView: View {
         }
     }
     
+    @ViewBuilder
+    private var locationStatusView: some View {
+        let status = backgroundManager.locationAuthorizationStatus
+        
+        HStack(spacing: 4) {
+            switch status {
+            case .authorizedAlways:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.caption2)
+                Text("Always authorized")
+                    .font(.caption2)
+                    .foregroundColor(.green)
+            case .authorizedWhenInUse:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.caption2)
+                Text("Enable 'Always' in Settings > Privacy > Location")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+            case .denied, .restricted:
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+                    .font(.caption2)
+                Text("Permission denied - enable in Settings")
+                    .font(.caption2)
+                    .foregroundColor(.red)
+            case .notDetermined:
+                Image(systemName: "questionmark.circle.fill")
+                    .foregroundColor(.gray)
+                    .font(.caption2)
+                Text("Tap to request permission")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            @unknown default:
+                EmptyView()
+            }
+        }
+    }
+    
+    private func selectBackgroundMethod(_ method: BackgroundAwakeMethod) {
+        settingsManager.backgroundAwakeMethod = method
+        
+        // Request location permission if location method is selected
+        if method == .location {
+            backgroundManager.requestLocationPermission()
+        }
+    }
+    
     private func methodColor(_ method: BackgroundAwakeMethod) -> Color {
         switch method {
         case .location:
@@ -114,4 +170,5 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .environmentObject(SettingsManager())
+        .environmentObject(BackgroundManager())
 }

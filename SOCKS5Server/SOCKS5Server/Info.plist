@@ -48,9 +48,15 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs access to the local network to run a SOCKS5 proxy server for sharing your mobile data connection.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app uses your location to keep the proxy server running in the background. Your location data is not collected or stored.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses your location to keep the proxy server running in the background. Your location data is not collected or stored.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>
+		<string>location</string>
+		<string>audio</string>
 	</array>
 </dict>
 </plist>
