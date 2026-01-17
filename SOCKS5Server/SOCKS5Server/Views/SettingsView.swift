@@ -76,6 +76,26 @@ struct SettingsView: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
+                    
+                    // Dynamic Island toggle (only shown when location method is selected)
+                    if settingsManager.backgroundAwakeMethod == .location {
+                        Toggle(isOn: $settingsManager.enableDynamicIsland) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "island.fill")
+                                    .foregroundColor(.purple)
+                                    .font(.title3)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Dynamic Island")
+                                        .font(.body)
+                                    Text("Show proxy status in Dynamic Island")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .tint(.purple)
+                    }
                 } header: {
                     Text("Background Method")
                 } footer: {

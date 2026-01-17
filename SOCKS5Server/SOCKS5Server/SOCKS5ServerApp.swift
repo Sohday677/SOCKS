@@ -29,7 +29,8 @@ struct SOCKS5ServerApp: App {
                         backgroundManager.startBackgroundMethod(
                             settingsManager.backgroundAwakeMethod,
                             ipAddress: serverManager.ipAddress,
-                            port: serverManager.port
+                            port: serverManager.port,
+                            enableDynamicIsland: settingsManager.enableDynamicIsland
                         )
                     } else {
                         // Send disconnection notification if server was previously running
@@ -42,13 +43,25 @@ struct SOCKS5ServerApp: App {
                         backgroundManager.startBackgroundMethod(
                             method,
                             ipAddress: serverManager.ipAddress,
-                            port: serverManager.port
+                            port: serverManager.port,
+                            enableDynamicIsland: settingsManager.enableDynamicIsland
+                        )
+                    }
+                }
+                .onReceive(settingsManager.$enableDynamicIsland) { enabled in
+                    // Restart background method when Dynamic Island setting changes
+                    if serverManager.isRunning && settingsManager.backgroundAwakeMethod == .location {
+                        backgroundManager.startBackgroundMethod(
+                            .location,
+                            ipAddress: serverManager.ipAddress,
+                            port: serverManager.port,
+                            enableDynamicIsland: enabled
                         )
                     }
                 }
                 .onReceive(serverManager.$connectedClients) { clients in
-                    // Update Live Activity when client count changes
-                    if serverManager.isRunning && settingsManager.backgroundAwakeMethod == .location {
+                    // Update Live Activity when client count changes (only if Dynamic Island is enabled)
+                    if serverManager.isRunning && settingsManager.backgroundAwakeMethod == .location && settingsManager.enableDynamicIsland {
                         backgroundManager.updateLiveActivity(
                             ipAddress: serverManager.ipAddress,
                             port: serverManager.port,

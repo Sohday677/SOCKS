@@ -88,7 +88,8 @@ class BackgroundManager: NSObject, ObservableObject {
     ///   - method: The background awake method to use
     ///   - ipAddress: Optional IP address for Live Activity (location mode)
     ///   - port: Optional port for Live Activity (location mode)
-    func startBackgroundMethod(_ method: BackgroundAwakeMethod, ipAddress: String? = nil, port: Int? = nil) {
+    ///   - enableDynamicIsland: Whether Dynamic Island display is enabled (default: false)
+    func startBackgroundMethod(_ method: BackgroundAwakeMethod, ipAddress: String? = nil, port: Int? = nil, enableDynamicIsland: Bool = false) {
         // Stop any existing method first
         stopBackgroundMethod()
         
@@ -99,8 +100,8 @@ class BackgroundManager: NSObject, ObservableObject {
             // Request notification permission automatically for location mode
             requestNotificationPermission()
             startLocationUpdates()
-            // Start Live Activity for Dynamic Island if IP and port are provided
-            if let ip = ipAddress, let p = port {
+            // Start Live Activity for Dynamic Island if enabled and IP and port are provided
+            if enableDynamicIsland, let ip = ipAddress, let p = port {
                 startLiveActivity(ipAddress: ip, port: p)
             }
         case .audio:
