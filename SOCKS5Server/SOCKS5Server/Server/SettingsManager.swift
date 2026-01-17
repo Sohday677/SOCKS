@@ -43,6 +43,7 @@ class SettingsManager: ObservableObject {
     private enum Keys {
         static let autoStartServer = "autoStartServer"
         static let backgroundAwakeMethod = "backgroundAwakeMethod"
+        static let enableDynamicIsland = "enableDynamicIsland"
     }
     
     // MARK: - Published Properties
@@ -58,6 +59,12 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    @Published var enableDynamicIsland: Bool {
+        didSet {
+            UserDefaults.standard.set(enableDynamicIsland, forKey: Keys.enableDynamicIsland)
+        }
+    }
+    
     // MARK: - Initialization
     init() {
         // Set defaults if not set
@@ -67,11 +74,16 @@ class SettingsManager: ObservableObject {
         if UserDefaults.standard.object(forKey: Keys.backgroundAwakeMethod) == nil {
             UserDefaults.standard.set(BackgroundAwakeMethod.audio.rawValue, forKey: Keys.backgroundAwakeMethod)
         }
+        if UserDefaults.standard.object(forKey: Keys.enableDynamicIsland) == nil {
+            UserDefaults.standard.set(false, forKey: Keys.enableDynamicIsland)
+        }
         
         // Load settings
         self.autoStartServer = UserDefaults.standard.bool(forKey: Keys.autoStartServer)
         
         let methodString = UserDefaults.standard.string(forKey: Keys.backgroundAwakeMethod) ?? BackgroundAwakeMethod.audio.rawValue
         self.backgroundAwakeMethod = BackgroundAwakeMethod(rawValue: methodString) ?? .audio
+        
+        self.enableDynamicIsland = UserDefaults.standard.bool(forKey: Keys.enableDynamicIsland)
     }
 }
