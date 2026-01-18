@@ -10,8 +10,10 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var serverManager: SOCKS5ServerManager
     @EnvironmentObject var settingsManager: SettingsManager
+    @EnvironmentObject var tcpForwarderManager: TCPForwarderManager
     @State private var showingHelp = false
     @State private var showingSettings = false
+    @State private var showingVPNConfig = false
     
     var body: some View {
         NavigationView {
@@ -27,6 +29,9 @@ struct ContentView: View {
                     
                     // Proxy Configuration Card
                     ProxyConfigCard()
+                    
+                    // VPN Config Card
+                    VPNConfigCard()
                     
                     // Server Control Button
                     ServerControlButton()
@@ -58,11 +63,96 @@ struct ContentView: View {
                 SettingsView()
                     .environmentObject(settingsManager)
             }
+            .sheet(isPresented: $showingVPNConfig) {
+                VPNConfigView()
+                    .environmentObject(serverManager)
+                    .environmentObject(tcpForwarderManager)
+            }
         }
         .onAppear {
             if settingsManager.autoStartServer && !serverManager.isRunning {
                 serverManager.startServer()
             }
+        }
+    }
+}
+
+// MARK: - VPN Config Card
+struct VPNConfigCard: View {
+    @EnvironmentObject var tcpForwarderManager: TCPForwarderManager
+    @State private var showingVPNConfig = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .font(.title2)
+                    .foregroundColor(.purple)
+                
+                Text("VPN Configuration")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if tcpForwarderManager.isForwarding {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                        Text("Forwarding")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+            
+            Text("Generate OpenVPN/WireGuard configs or use TCP forwarding to route VPN connections through your iPhone.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            if tcpForwarderManager.isForwarding {
+                Divider()
+                
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Local:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(tcpForwarderManager.localIPAddress):\(tcpForwarderManager.localPort)")
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                    HStack {
+                        Text("Remote:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(tcpForwarderManager.remoteHost):\(tcpForwarderManager.remotePort)")
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                }
+            }
+            
+            Button(action: {
+                showingVPNConfig = true
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right.circle.fill")
+                    Text("Configure VPN")
+                }
+                .font(.subheadline)
+                .foregroundColor(.purple)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemBackground))
+                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
+        )
+        .sheet(isPresented: $showingVPNConfig) {
+            VPNConfigView()
         }
     }
 }
@@ -355,4 +445,5 @@ struct ServerControlButton: View {
     ContentView()
         .environmentObject(SOCKS5ServerManager())
         .environmentObject(SettingsManager())
+        .environmentObject(TCPForwarderManager())
 }

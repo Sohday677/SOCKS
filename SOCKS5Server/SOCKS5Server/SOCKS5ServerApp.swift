@@ -13,6 +13,7 @@ struct SOCKS5ServerApp: App {
     @StateObject private var serverManager = SOCKS5ServerManager()
     @StateObject private var settingsManager = SettingsManager()
     @StateObject private var backgroundManager = BackgroundManager()
+    @StateObject private var tcpForwarderManager = TCPForwarderManager()
     
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,7 @@ struct SOCKS5ServerApp: App {
                 .environmentObject(serverManager)
                 .environmentObject(settingsManager)
                 .environmentObject(backgroundManager)
+                .environmentObject(tcpForwarderManager)
                 .onReceive(serverManager.$isRunning) { isRunning in
                     if isRunning {
                         backgroundManager.startBackgroundMethod(settingsManager.backgroundAwakeMethod)

@@ -20,6 +20,9 @@ struct HelpView: View {
                     // Step-by-step Guide
                     SetupGuideSection()
                     
+                    // VPN Configuration Guide
+                    VPNConfigSection()
+                    
                     // Router Configuration
                     RouterConfigSection()
                     
@@ -280,6 +283,91 @@ struct TroubleshootItem: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+// MARK: - VPN Configuration Section
+struct VPNConfigSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .font(.title2)
+                    .foregroundColor(.purple)
+                Text("VPN Configuration")
+                    .font(.headline)
+                    .fontWeight(.bold)
+            }
+            
+            Text("Use the VPN Configuration feature to route VPN traffic through your iPhone's cellular connection. This is useful for sharing a VPN connection with devices that don't support VPN directly.")
+                .font(.body)
+                .foregroundColor(.secondary)
+            
+            VStack(alignment: .leading, spacing: 16) {
+                // TCP Forwarding
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundColor(.blue)
+                        Text("TCP Forwarding")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    Text("Acts like socat - forwards TCP connections from your local network to a remote VPN server. Configure your VPN client (on PC/router) to connect to your iPhone's IP instead of the VPN server directly.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Config Generation
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "doc.badge.gearshape")
+                            .foregroundColor(.orange)
+                        Text("Config Generation")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    Text("Import your existing OpenVPN (.ovpn) or WireGuard (.conf) files, and the app will generate modified configs that point to the local TCP forwarder.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Usage Steps
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("How to use:")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        BulletPoint(text: "Tap 'Configure VPN' on main screen")
+                        BulletPoint(text: "Enter your VPN server address and port")
+                        BulletPoint(text: "Start the TCP Forwarder")
+                        BulletPoint(text: "Import your VPN config or generate a template")
+                        BulletPoint(text: "Export the modified config to your PC")
+                        BulletPoint(text: "Connect your VPN client using the new config")
+                    }
+                }
+                
+                // Note about WireGuard
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.yellow)
+                        Text("WireGuard Note")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    Text("WireGuard uses UDP which cannot be directly forwarded over TCP. You'll need to wrap WireGuard with a tool like wstunnel on both the server and client side.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemGray6))
+        )
     }
 }
 
