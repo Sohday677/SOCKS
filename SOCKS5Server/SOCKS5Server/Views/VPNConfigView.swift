@@ -8,6 +8,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Define custom UTTypes for VPN config files
+extension UTType {
+    static var openVPNConfig: UTType {
+        UTType(filenameExtension: "ovpn", conformingTo: .text) ?? .plainText
+    }
+    
+    static var wireGuardConfig: UTType {
+        UTType(filenameExtension: "conf", conformingTo: .text) ?? .plainText
+    }
+}
+
 struct VPNConfigView: View {
     @EnvironmentObject var serverManager: SOCKS5ServerManager
     @EnvironmentObject var tcpForwarderManager: TCPForwarderManager
@@ -62,7 +73,7 @@ struct VPNConfigView: View {
             }
             .fileImporter(
                 isPresented: $showingImportPicker,
-                allowedContentTypes: [.text, .plainText, UTType(filenameExtension: "ovpn") ?? .text, UTType(filenameExtension: "conf") ?? .text],
+                allowedContentTypes: [.plainText, .text, .data, .item],
                 allowsMultipleSelection: false
             ) { result in
                 handleFileImport(result)
@@ -460,25 +471,70 @@ struct VPNConfigView: View {
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else { return }
+            guard let url = urls.first else { 
+                alertMessage = "No file was selected"
+                showingAlert = true
+                return 
+            }
+            
+            // Start accessing the security-scoped resource
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             
             do {
-                let content = try String(contentsOf: url, encoding: .utf8)
+                // Try to read the file content
+                let content: String
+                
+                // First try reading directly
+                if let directContent = try? String(contentsOf: url, encoding: .utf8) {
+                    content = directContent
+                } else if let data = try? Data(contentsOf: url),
+                          let dataContent = String(data: data, encoding: .utf8) {
+                    // Try reading as data first then converting
+                    content = dataContent
+                } else if let data = try? Data(contentsOf: url),
+                          let dataContent = String(data: data, encoding: .ascii) {
+                    // Fallback to ASCII
+                    content = dataContent
+                } else {
+                    throw NSError(domain: "VPNConfigView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to read file content"])
+                }
+                
                 importedConfig = content
                 
-                // Try to parse the config
+                // Try to parse the config and auto-detect type
                 if let endpoint = VPNConfigGenerator.parseOpenVPNConfig(content) {
                     remoteHost = endpoint.host
                     remotePort = String(endpoint.port)
                     selectedVPNType = .openVPN
-                    alertMessage = "OpenVPN config imported! Endpoint: \(endpoint.host):\(endpoint.port)"
+                    alertMessage = "OpenVPN config imported!\nEndpoint: \(endpoint.host):\(endpoint.port)"
+                    
+                    // Auto-generate the modified config
+                    generateModifiedConfig()
                 } else if let endpoint = VPNConfigGenerator.parseWireGuardConfig(content) {
                     remoteHost = endpoint.host
                     remotePort = String(endpoint.port)
                     selectedVPNType = .wireGuard
-                    alertMessage = "WireGuard config imported! Endpoint: \(endpoint.host):\(endpoint.port)"
+                    alertMessage = "WireGuard config imported!\nEndpoint: \(endpoint.host):\(endpoint.port)"
+                    
+                    // Auto-generate the modified config
+                    generateModifiedConfig()
                 } else {
-                    alertMessage = "Config imported but couldn't parse endpoint. Please enter the VPN server details manually."
+                    // Check file extension to help determine type
+                    let fileExtension = url.pathExtension.lowercased()
+                    if fileExtension == "ovpn" {
+                        selectedVPNType = .openVPN
+                        alertMessage = "OpenVPN config imported but couldn't parse endpoint automatically.\nPlease enter the VPN server details manually and tap 'Generate from Imported Config'."
+                    } else if fileExtension == "conf" {
+                        selectedVPNType = .wireGuard
+                        alertMessage = "WireGuard config imported but couldn't parse endpoint automatically.\nPlease enter the VPN server details manually and tap 'Generate from Imported Config'."
+                    } else {
+                        alertMessage = "Config file imported but couldn't determine VPN type.\nPlease select the correct VPN type and enter server details manually."
+                    }
                 }
                 showingAlert = true
                 
