@@ -34,7 +34,7 @@ jobs:
       - name: Get App Version
         run: |
           cd SOCKS5Server
-          APP_VERSION=$(xcodebuild -project SOCKS5Server.xcodeproj -target SOCKS5Server -showBuildSettings | grep 'MARKETING_VERSION =' | awk '{print $3}')
+          APP_VERSION=$(xcodebuild -project SOCKS5Server.xcodeproj -showBuildSettings 2>/dev/null | grep 'MARKETING_VERSION' | head -1 | awk '{print $NF}')
           if [ -z "$APP_VERSION" ]; then
             APP_VERSION="1.0"
           fi
