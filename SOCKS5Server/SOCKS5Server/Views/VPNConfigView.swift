@@ -568,29 +568,33 @@ struct VPNConfigView: View {
     }
     
     private func generateExportData() -> URL {
-        let fileExtension: String
-        switch selectedVPNType {
-        case .openVPN:
-            fileExtension = generatedConfig.contains("FindProxyForURL") ? "pac" : "ovpn"
-        case .wireGuard:
-            fileExtension = generatedConfig.contains("FindProxyForURL") ? "pac" : "conf"
-        }
-        
-        // For PAC files
-        if generatedConfig.contains("FindProxyForURL") {
-            configFileName = "proxy"
-        }
-        
-        // For simple text config
-        if generatedConfig.contains("SOCKS5 Server Configuration") {
-            configFileName = "proxy-config"
-        }
-        
-        let fileName = "\(configFileName).\(generatedConfig.contains("FindProxyForURL") ? "pac" : (generatedConfig.contains("SOCKS5 Server Configuration") ? "txt" : fileExtension))"
+        let fileName = determineExportFileName()
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         
         try? generatedConfig.write(to: tempURL, atomically: true, encoding: .utf8)
         return tempURL
+    }
+    
+    private func determineExportFileName() -> String {
+        // Check for special config types first
+        if generatedConfig.contains("FindProxyForURL") {
+            return "proxy.pac"
+        }
+        
+        if generatedConfig.contains("SOCKS5 Server Configuration") {
+            return "proxy-config.txt"
+        }
+        
+        // For VPN configs, use appropriate extension
+        let vpnExtension: String
+        switch selectedVPNType {
+        case .openVPN:
+            vpnExtension = "ovpn"
+        case .wireGuard:
+            vpnExtension = "conf"
+        }
+        
+        return "\(configFileName).\(vpnExtension)"
     }
 }
 
