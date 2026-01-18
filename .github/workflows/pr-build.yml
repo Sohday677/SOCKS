@@ -24,6 +24,16 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Get App Version
+        run: |
+          cd SOCKS5Server
+          APP_VERSION=$(xcodebuild -project SOCKS5Server.xcodeproj -showBuildSettings 2>/dev/null | grep 'MARKETING_VERSION' | head -1 | awk '{print $NF}')
+          if [ -z "$APP_VERSION" ]; then
+            APP_VERSION="1.0"
+          fi
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_ENV
+
       - name: Build iOS App
         run: |
           cd SOCKS5Server
@@ -38,6 +48,24 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Create IPA
+        run: |
+          cd SOCKS5Server
+          mkdir -p build/Payload
+          cp -r build/SOCKS5Server.xcarchive/Products/Applications/SOCKS5Server.app build/Payload/
+          cd build
+          zip -r ../SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa Payload
+          cd ..
+          mv SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa ${{ github.workspace }}/
+
+      - name: Upload IPA as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}
+          path: SOCKS5Server_v${{ env.APP_VERSION }}_${{ env.BUILD_NUMBER }}.ipa
+
       - name: Build Success
         run: |
           echo "✅ Build completed successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifact Upload" >> $GITHUB_STEP_SUMMARY
+          echo "IPA uploaded as a public artifact. Scroll down to view and download." >> $GITHUB_STEP_SUMMARY
