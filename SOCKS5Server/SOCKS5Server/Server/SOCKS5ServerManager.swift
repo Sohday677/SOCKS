@@ -509,24 +509,28 @@ class SOCKS5ServerManager: ObservableObject {
         
         // Handle CONNECT method for HTTPS tunneling
         if components.count >= 2 && components[0] == "CONNECT" {
-            handleHTTPConnect(connection, hostPort: components[1], originalData: data)
+            handleHTTPConnect(connection, hostPort: components[1])
         } else {
             // Handle regular HTTP requests (GET, POST, etc.)
             handleHTTPProxy(connection, requestData: data, requestString: requestString)
         }
     }
     
-    private func handleHTTPConnect(_ clientConnection: NWConnection, hostPort: String, originalData: Data) {
+    private func handleHTTPConnect(_ clientConnection: NWConnection, hostPort: String) {
         // Parse host:port
         let parts = hostPort.components(separatedBy: ":")
         guard parts.count == 2,
-              let portValue = UInt16(parts[1]) else {
+              let portValue = UInt16(parts[1]),
+              portValue > 0 else {
             sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
             return
         }
         
         let host = NWEndpoint.Host(parts[0])
-        let port = NWEndpoint.Port(rawValue: portValue)!
+        guard let port = NWEndpoint.Port(rawValue: portValue) else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
+            return
+        }
         
         let parameters = NWParameters.tcp
         let targetConnection = NWConnection(host: host, port: port, using: parameters)
@@ -578,7 +582,10 @@ class SOCKS5ServerManager: ObservableObject {
         
         // Create connection to target server
         let nwHost = NWEndpoint.Host(targetHost)
-        let nwPort = NWEndpoint.Port(rawValue: port)!
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request - Invalid Port")
+            return
+        }
         
         let parameters = NWParameters.tcp
         let targetConnection = NWConnection(host: nwHost, port: nwPort, using: parameters)
