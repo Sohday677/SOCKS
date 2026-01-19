@@ -36,7 +36,7 @@ struct ContentView: View {
                 .padding()
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("SOCKS5 Server")
+            .navigationTitle("Proxy Server")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { showingSettings = true }) {
