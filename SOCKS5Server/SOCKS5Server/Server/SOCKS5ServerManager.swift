@@ -45,7 +45,6 @@ class SOCKS5ServerManager: ObservableObject {
     private var listener: NWListener?
     private var udpListener: NWListener?
     private var connections: [NWConnection] = []
-    private var udpAssociations: [String: NWConnection] = [] // clientAddr -> udpConnection
     private let queue = DispatchQueue(label: "com.socks5server.network", qos: .userInteractive)
     private let udpQueue = DispatchQueue(label: "com.socks5server.udp", qos: .userInteractive)
     
@@ -139,7 +138,6 @@ class SOCKS5ServerManager: ObservableObject {
             connection.cancel()
         }
         connections.removeAll()
-        udpAssociations.removeAll()
         
         DispatchQueue.main.async {
             self.isRunning = false
@@ -322,7 +320,8 @@ class SOCKS5ServerManager: ObservableObject {
             var ipString = ""
             for i in stride(from: 0, to: 16, by: 2) {
                 if !ipString.isEmpty { ipString += ":" }
-                ipString += String(format: "%02x%02x", ipBytes[ipBytes.startIndex + i], ipBytes[ipBytes.startIndex + i + 1])
+                let value = UInt16(ipBytes[ipBytes.startIndex + i]) << 8 | UInt16(ipBytes[ipBytes.startIndex + i + 1])
+                ipString += String(format: "%04x", value)
             }
             host = NWEndpoint.Host(ipString)
             offset += 16
@@ -687,10 +686,10 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func handleUDPConnection(_ connection: NWConnection) {
-        connection.stateUpdateHandler = { state in
+        connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                self.receiveUDPPacket(connection)
+                self?.receiveUDPPacket(connection)
             case .failed, .cancelled:
                 break
             default:
@@ -776,7 +775,8 @@ class SOCKS5ServerManager: ObservableObject {
             var ipString = ""
             for i in stride(from: 0, to: 16, by: 2) {
                 if !ipString.isEmpty { ipString += ":" }
-                ipString += String(format: "%02x%02x", ipBytes[ipBytes.startIndex + i], ipBytes[ipBytes.startIndex + i + 1])
+                let value = UInt16(ipBytes[ipBytes.startIndex + i]) << 8 | UInt16(ipBytes[ipBytes.startIndex + i + 1])
+                ipString += String(format: "%04x", value)
             }
             host = NWEndpoint.Host(ipString)
             offset += 16
