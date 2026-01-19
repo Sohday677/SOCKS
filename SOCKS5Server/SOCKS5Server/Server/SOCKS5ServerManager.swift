@@ -521,7 +521,7 @@ class SOCKS5ServerManager: ObservableObject {
         let parts = hostPort.components(separatedBy: ":")
         guard parts.count == 2,
               let portValue = UInt16(parts[1]),
-              portValue > 0 else {
+              portValue > 0 && portValue <= 65535 else {
             sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
             return
         }
@@ -568,7 +568,7 @@ class SOCKS5ServerManager: ObservableObject {
                 let hostValue = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 let parts = hostValue.components(separatedBy: ":")
                 host = parts[0]
-                if parts.count > 1, let portValue = UInt16(parts[1]) {
+                if parts.count > 1, let portValue = UInt16(parts[1]), portValue > 0 && portValue <= 65535 {
                     port = portValue
                 }
                 break
