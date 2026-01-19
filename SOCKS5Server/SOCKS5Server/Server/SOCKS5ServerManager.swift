@@ -317,13 +317,7 @@ class SOCKS5ServerManager: ObservableObject {
                 return
             }
             let ipBytes = data[offset..<offset+16]
-            var ipString = ""
-            for i in stride(from: 0, to: 16, by: 2) {
-                if !ipString.isEmpty { ipString += ":" }
-                let value = UInt16(ipBytes[ipBytes.startIndex + i]) << 8 | UInt16(ipBytes[ipBytes.startIndex + i + 1])
-                ipString += String(format: "%04x", value)
-            }
-            host = NWEndpoint.Host(ipString)
+            host = NWEndpoint.Host(formatIPv6FromBytes(ipBytes))
             offset += 16
             
         default:
@@ -701,6 +695,8 @@ class SOCKS5ServerManager: ObservableObject {
     }
     
     private func receiveUDPPacket(_ connection: NWConnection) {
+        // Note: This uses asynchronous recursion which is safe - the completion handler
+        // is called asynchronously when data arrives, not synchronously in a loop
         connection.receiveMessage { [weak self] data, context, isComplete, error in
             guard let self = self else { return }
             
@@ -722,7 +718,7 @@ class SOCKS5ServerManager: ObservableObject {
             // Process UDP relay packet
             self.processUDPRelayPacket(data, sourceConnection: connection)
             
-            // Continue receiving
+            // Continue receiving (asynchronous tail recursion is safe here)
             self.receiveUDPPacket(connection)
         }
     }
@@ -772,13 +768,7 @@ class SOCKS5ServerManager: ObservableObject {
         case 0x04: // IPv6
             guard data.count >= offset + 18 else { return }
             let ipBytes = data[offset..<offset+16]
-            var ipString = ""
-            for i in stride(from: 0, to: 16, by: 2) {
-                if !ipString.isEmpty { ipString += ":" }
-                let value = UInt16(ipBytes[ipBytes.startIndex + i]) << 8 | UInt16(ipBytes[ipBytes.startIndex + i + 1])
-                ipString += String(format: "%04x", value)
-            }
-            host = NWEndpoint.Host(ipString)
+            host = NWEndpoint.Host(formatIPv6FromBytes(ipBytes))
             offset += 16
             
         default:
@@ -883,5 +873,15 @@ class SOCKS5ServerManager: ObservableObject {
         let components = ipString.split(separator: ".").compactMap { UInt8($0) }
         guard components.count == 4 else { return nil }
         return Data(components)
+    }
+    
+    private func formatIPv6FromBytes(_ ipBytes: Data.SubSequence) -> String {
+        var ipString = ""
+        for i in stride(from: 0, to: 16, by: 2) {
+            if !ipString.isEmpty { ipString += ":" }
+            let value = UInt16(ipBytes[ipBytes.startIndex + i]) << 8 | UInt16(ipBytes[ipBytes.startIndex + i + 1])
+            ipString += String(format: "%04x", value)
+        }
+        return ipString
     }
 }
