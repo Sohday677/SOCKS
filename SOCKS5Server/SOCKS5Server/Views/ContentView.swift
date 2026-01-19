@@ -61,8 +61,13 @@ struct ContentView: View {
         }
         .onAppear {
             if settingsManager.autoStartServer && !serverManager.isRunning {
+                serverManager.proxyType = settingsManager.proxyType
                 serverManager.startServer()
             }
+        }
+        .onChange(of: settingsManager.proxyType) { newProxyType in
+            // Update server manager proxy type when settings change
+            serverManager.proxyType = newProxyType
         }
     }
 }
@@ -70,6 +75,7 @@ struct ContentView: View {
 // MARK: - Server Status Card
 struct ServerStatusCard: View {
     @EnvironmentObject var serverManager: SOCKS5ServerManager
+    @EnvironmentObject var settingsManager: SettingsManager
     
     var body: some View {
         VStack(spacing: 16) {
@@ -99,6 +105,7 @@ struct ServerStatusCard: View {
                 Divider()
                 
                 VStack(spacing: 12) {
+                    InfoRow(icon: settingsManager.proxyType.icon, label: "Protocol", value: settingsManager.proxyType.rawValue)
                     InfoRow(icon: "network", label: "IP Address", value: serverManager.ipAddress)
                     InfoRow(icon: "number", label: "Port", value: "\(serverManager.port)")
                     InfoRow(icon: "person.2.fill", label: "Connected Clients", value: "\(serverManager.connectedClients)")
@@ -220,6 +227,7 @@ struct StatBox: View {
 // MARK: - Proxy Configuration Card
 struct ProxyConfigCard: View {
     @EnvironmentObject var serverManager: SOCKS5ServerManager
+    @EnvironmentObject var settingsManager: SettingsManager
     @State private var portText: String = ""
     
     var body: some View {
@@ -280,7 +288,7 @@ struct ProxyConfigCard: View {
                 Divider()
                 
                 Button(action: {
-                    let config = "SOCKS5 \(serverManager.ipAddress):\(serverManager.port)"
+                    let config = "\(settingsManager.proxyType.rawValue) \(serverManager.ipAddress):\(serverManager.port)"
                     UIPasteboard.general.string = config
                 }) {
                     HStack {
@@ -313,6 +321,7 @@ struct ProxyConfigCard: View {
 // MARK: - Server Control Button
 struct ServerControlButton: View {
     @EnvironmentObject var serverManager: SOCKS5ServerManager
+    @EnvironmentObject var settingsManager: SettingsManager
     
     var body: some View {
         Button(action: {
@@ -320,6 +329,7 @@ struct ServerControlButton: View {
                 if serverManager.isRunning {
                     serverManager.stopServer()
                 } else {
+                    serverManager.proxyType = settingsManager.proxyType
                     serverManager.startServer()
                 }
             }

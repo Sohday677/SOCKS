@@ -37,6 +37,46 @@ struct SettingsView: View {
                     Text("Startup")
                 }
                 
+                // Proxy Type Section
+                Section {
+                    ForEach(ProxyType.allCases) { type in
+                        Button(action: {
+                            selectProxyType(type)
+                        }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: type.icon)
+                                    .foregroundColor(proxyTypeColor(type))
+                                    .font(.title3)
+                                    .frame(width: 24)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(type.rawValue)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                    Text(type.description)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(2)
+                                }
+                                
+                                Spacer()
+                                
+                                if settingsManager.proxyType == type {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.blue)
+                                        .font(.title3)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                } header: {
+                    Text("Proxy Type")
+                } footer: {
+                    Text("Choose the proxy protocol for your server. SOCKS5 is more versatile, HTTP is optimized for web traffic.")
+                }
+                
                 // Background Awake Method Section
                 Section {
                     ForEach(BackgroundAwakeMethod.allCases) { method in
@@ -155,6 +195,10 @@ struct SettingsView: View {
         }
     }
     
+    private func selectProxyType(_ type: ProxyType) {
+        settingsManager.proxyType = type
+    }
+    
     private func methodColor(_ method: BackgroundAwakeMethod) -> Color {
         switch method {
         case .location:
@@ -163,6 +207,15 @@ struct SettingsView: View {
             return .orange
         case .none:
             return .gray
+        }
+    }
+    
+    private func proxyTypeColor(_ type: ProxyType) -> Color {
+        switch type {
+        case .socks5:
+            return .blue
+        case .http:
+            return .green
         }
     }
 }
