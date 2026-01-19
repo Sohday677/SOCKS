@@ -14,6 +14,8 @@ class SOCKS5ServerManager: ObservableObject {
     // MARK: - Constants
     private static let fallbackIPAddress = "0.0.0.0"
     private static let relayBufferSize = 65536
+    private static let httpRequestBufferSize = 8192
+    private static let defaultHTTPPort: UInt16 = 80
     private static let wifiInterfaceName = "en0"
     private static let bridgeInterfacePrefix = "bridge"
     
@@ -472,7 +474,7 @@ class SOCKS5ServerManager: ObservableObject {
     // MARK: - HTTP Proxy Methods
     
     private func receiveHTTPRequest(_ connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, isComplete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.httpRequestBufferSize) { [weak self] data, _, isComplete, error in
             if let error = error {
                 print("Receive HTTP error: \(error)")
                 connection.cancel()
@@ -554,7 +556,7 @@ class SOCKS5ServerManager: ObservableObject {
         }
         
         var host: String?
-        var port: UInt16 = 80
+        var port: UInt16 = Self.defaultHTTPPort
         
         // Find Host header
         for line in lines {
