@@ -100,7 +100,8 @@ struct ServerStatusCard: View {
                 
                 VStack(spacing: 12) {
                     InfoRow(icon: "network", label: "IP Address", value: serverManager.ipAddress)
-                    InfoRow(icon: "number", label: "Port", value: "\(serverManager.port)")
+                    InfoRow(icon: "number", label: "TCP Port", value: "\(serverManager.port)")
+                    InfoRow(icon: "number", label: "UDP Port", value: "\(serverManager.udpPort)")
                     InfoRow(icon: "person.2.fill", label: "Connected Clients", value: "\(serverManager.connectedClients)")
                 }
             }
