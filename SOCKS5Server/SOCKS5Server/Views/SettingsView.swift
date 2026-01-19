@@ -74,7 +74,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Proxy Type")
                 } footer: {
-                    Text("Choose proxy protocol. SOCKS5 for all traffic, HTTP for web only. Restart server to apply changes.")
+                    Text("Choose proxy protocol. SOCKS5 for TCP/UDP connections, HTTP for web traffic. Restart server to apply changes.")
                 }
                 
                 // Background Awake Method Section

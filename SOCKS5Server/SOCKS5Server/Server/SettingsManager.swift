@@ -17,7 +17,7 @@ enum ProxyType: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .socks5:
-            return "SOCKS5 protocol - Full proxy support for all TCP connections."
+            return "SOCKS5 protocol - Full proxy support for TCP and UDP connections."
         case .http:
             return "HTTP protocol - Proxy for HTTP/HTTPS web traffic."
         }

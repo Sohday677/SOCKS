@@ -473,6 +473,10 @@ class SOCKS5ServerManager: ObservableObject {
     
     // MARK: - HTTP Proxy Methods
     
+    private func isValidPort(_ port: UInt16) -> Bool {
+        return port > 0 && port <= 65535
+    }
+    
     private func receiveHTTPRequest(_ connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: Self.httpRequestBufferSize) { [weak self] data, _, isComplete, error in
             if let error = error {
@@ -521,7 +525,7 @@ class SOCKS5ServerManager: ObservableObject {
         let parts = hostPort.components(separatedBy: ":")
         guard parts.count == 2,
               let portValue = UInt16(parts[1]),
-              portValue > 0 && portValue <= 65535 else {
+              isValidPort(portValue) else {
             sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
             return
         }
@@ -568,7 +572,7 @@ class SOCKS5ServerManager: ObservableObject {
                 let hostValue = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 let parts = hostValue.components(separatedBy: ":")
                 host = parts[0]
-                if parts.count > 1, let portValue = UInt16(parts[1]), portValue > 0 && portValue <= 65535 {
+                if parts.count > 1, let portValue = UInt16(parts[1]), isValidPort(portValue) {
                     port = portValue
                 }
                 break
