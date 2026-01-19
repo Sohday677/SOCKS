@@ -14,6 +14,8 @@ class SOCKS5ServerManager: ObservableObject {
     // MARK: - Constants
     private static let fallbackIPAddress = "0.0.0.0"
     private static let relayBufferSize = 65536
+    private static let httpRequestBufferSize = 8192
+    private static let defaultHTTPPort: UInt16 = 80
     private static let wifiInterfaceName = "en0"
     private static let bridgeInterfacePrefix = "bridge"
     
@@ -26,6 +28,9 @@ class SOCKS5ServerManager: ObservableObject {
     @Published var downloadBytes: Int64 = 0
     @Published var uploadSpeed: Double = 0.0  // Mbps
     @Published var downloadSpeed: Double = 0.0  // Mbps
+    
+    // Proxy type
+    var proxyType: ProxyType = .socks5
     
     // Speed calculation - use internal counters to avoid main queue dispatches per packet
     private var lastUploadBytes: Int64 = 0
@@ -147,7 +152,12 @@ class SOCKS5ServerManager: ObservableObject {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                self?.receiveSOCKS5Request(connection)
+                // Route to appropriate protocol handler based on proxy type
+                if self?.proxyType == .socks5 {
+                    self?.receiveSOCKS5Request(connection)
+                } else {
+                    self?.receiveHTTPRequest(connection)
+                }
             case .failed, .cancelled:
                 self?.removeConnection(connection)
             default:
@@ -458,6 +468,176 @@ class SOCKS5ServerManager: ObservableObject {
             } else {
                 self?.relay(from: source, to: destination)
             }
+        }
+    }
+    
+    // MARK: - HTTP Proxy Methods
+    
+    private func isValidPort(_ port: UInt16) -> Bool {
+        return port > 0 && port <= 65535
+    }
+    
+    private func receiveHTTPRequest(_ connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.httpRequestBufferSize) { [weak self] data, _, isComplete, error in
+            if let error = error {
+                print("Receive HTTP error: \(error)")
+                connection.cancel()
+                return
+            }
+            
+            guard let data = data, !data.isEmpty else {
+                if isComplete {
+                    connection.cancel()
+                }
+                return
+            }
+            
+            self?.processHTTPRequest(connection, data: data)
+        }
+    }
+    
+    private func processHTTPRequest(_ connection: NWConnection, data: Data) {
+        guard let requestString = String(data: data, encoding: .utf8) else {
+            connection.cancel()
+            return
+        }
+        
+        let lines = requestString.components(separatedBy: "\r\n")
+        guard !lines.isEmpty else {
+            connection.cancel()
+            return
+        }
+        
+        let requestLine = lines[0]
+        let components = requestLine.components(separatedBy: " ")
+        
+        // Handle CONNECT method for HTTPS tunneling
+        if components.count >= 2 && components[0] == "CONNECT" {
+            handleHTTPConnect(connection, hostPort: components[1])
+        } else {
+            // Handle regular HTTP requests (GET, POST, etc.)
+            handleHTTPProxy(connection, requestData: data, requestString: requestString)
+        }
+    }
+    
+    private func handleHTTPConnect(_ clientConnection: NWConnection, hostPort: String) {
+        // Parse host:port
+        let parts = hostPort.components(separatedBy: ":")
+        guard parts.count == 2,
+              let portValue = UInt16(parts[1]),
+              isValidPort(portValue) else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
+            return
+        }
+        
+        let host = NWEndpoint.Host(parts[0])
+        guard let port = NWEndpoint.Port(rawValue: portValue) else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
+            return
+        }
+        
+        let parameters = NWParameters.tcp
+        let targetConnection = NWConnection(host: host, port: port, using: parameters)
+        
+        targetConnection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                self?.sendHTTPConnectSuccess(clientConnection)
+                self?.startBidirectionalRelay(client: clientConnection, target: targetConnection)
+            case .failed:
+                self?.sendHTTPError(clientConnection, statusCode: 502, message: "Bad Gateway")
+            default:
+                break
+            }
+        }
+        
+        targetConnection.start(queue: queue)
+        connections.append(targetConnection)
+    }
+    
+    private func handleHTTPProxy(_ clientConnection: NWConnection, requestData: Data, requestString: String) {
+        // Parse the request to extract host and construct proper request
+        let lines = requestString.components(separatedBy: "\r\n")
+        guard !lines.isEmpty else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request")
+            return
+        }
+        
+        var host: String?
+        var port: UInt16 = Self.defaultHTTPPort
+        
+        // Find Host header
+        for line in lines {
+            if line.lowercased().hasPrefix("host:") {
+                let hostValue = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                let parts = hostValue.components(separatedBy: ":")
+                host = parts[0]
+                if parts.count > 1, let portValue = UInt16(parts[1]), isValidPort(portValue) {
+                    port = portValue
+                }
+                break
+            }
+        }
+        
+        guard let targetHost = host else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request - No Host header")
+            return
+        }
+        
+        // Create connection to target server
+        let nwHost = NWEndpoint.Host(targetHost)
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            sendHTTPError(clientConnection, statusCode: 400, message: "Bad Request - Invalid Port")
+            return
+        }
+        
+        let parameters = NWParameters.tcp
+        let targetConnection = NWConnection(host: nwHost, port: nwPort, using: parameters)
+        
+        targetConnection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                // Forward the original request
+                targetConnection.send(content: requestData, completion: .contentProcessed { [weak self] error in
+                    if let error = error {
+                        print("HTTP proxy send error: \(error)")
+                        clientConnection.cancel()
+                        targetConnection.cancel()
+                        return
+                    }
+                    // Start relaying responses
+                    self?.startBidirectionalRelay(client: clientConnection, target: targetConnection)
+                })
+            case .failed:
+                self?.sendHTTPError(clientConnection, statusCode: 502, message: "Bad Gateway")
+            default:
+                break
+            }
+        }
+        
+        targetConnection.start(queue: queue)
+        connections.append(targetConnection)
+    }
+    
+    private func sendHTTPConnectSuccess(_ connection: NWConnection) {
+        let response = "HTTP/1.1 200 Connection Established\r\n\r\n"
+        if let data = response.data(using: .utf8) {
+            connection.send(content: data, completion: .contentProcessed { error in
+                if let error = error {
+                    print("Send HTTP success error: \(error)")
+                }
+            })
+        }
+    }
+    
+    private func sendHTTPError(_ connection: NWConnection, statusCode: Int, message: String) {
+        let response = "HTTP/1.1 \(statusCode) \(message)\r\nContent-Length: 0\r\n\r\n"
+        if let data = response.data(using: .utf8) {
+            connection.send(content: data, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+        } else {
+            connection.cancel()
         }
     }
     

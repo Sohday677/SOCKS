@@ -1,6 +1,6 @@
-# SOCKS5 Server for iOS
+# SOCKS5/HTTP Proxy Server for iOS
 
-A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server, allowing you to improve hotspot speeds by routing traffic through your device's mobile data connection.
+A clean and intuitive iOS app that turns your iPhone into a SOCKS5 or HTTP proxy server, allowing you to improve hotspot speeds by routing traffic through your device's mobile data connection.
 
 ![iOS](https://img.shields.io/badge/iOS-16.0+-blue.svg)
 ![Swift](https://img.shields.io/badge/Swift-5.0-orange.svg)
@@ -9,7 +9,9 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 
 ## ✨ Features
 
+- **Dual Protocol Support**: Choose between SOCKS5 and HTTP proxy protocols
 - **Native SOCKS5 Server**: Full implementation of the SOCKS5 protocol
+- **HTTP Proxy Support**: HTTP/HTTPS proxy with CONNECT method tunneling
 - **Clean SwiftUI Interface**: Modern, intuitive design with live statistics
 - **One-Tap Control**: Start/Stop server with a single tap
 - **Auto IP Detection**: Automatically detects your local network IP
@@ -23,11 +25,12 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 
 The app features a clean, card-based interface with:
 - Server status display (running/stopped indicator)
+- Protocol selection (SOCKS5/HTTP)
 - IP address and port information
 - Live upload/download statistics (Mbps)
 - Configuration options
 - Start/Stop control button
-- Settings page for auto-start and background options
+- Settings page for auto-start, proxy type, and background options
 - Help menu with setup instructions
 
 ## 🚀 How to Use
@@ -46,14 +49,19 @@ The app features a clean, card-based interface with:
    - Under 'Configure IP', set Router field to empty or 0.0.0.0
    - This ensures mobile data is used for internet
 
-4. **Start SOCKS5 Server**
-   - Open the SOCKS5 Server app
+4. **Choose Proxy Type**
+   - Open the app and go to Settings
+   - Select your preferred proxy type (SOCKS5 or HTTP)
+   - SOCKS5 is recommended for most use cases (default)
+
+5. **Start Proxy Server**
+   - Open the Proxy Server app
    - Tap 'Start Server'
    - Note the IP address and port displayed
 
-5. **Configure Router Proxy**
+6. **Configure Router Proxy**
    - Access your router's admin panel (typically 192.168.8.1 for GL.iNet)
-   - Navigate to Applications → Remote Access → SOCKS5 Proxy
+   - Navigate to Applications → Remote Access → SOCKS5 Proxy (or HTTP Proxy)
    - Enter the IP and Port from the app
    - Save settings
 
