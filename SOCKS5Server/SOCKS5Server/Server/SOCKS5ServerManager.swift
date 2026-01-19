@@ -796,11 +796,14 @@ class SOCKS5ServerManager: ObservableObject {
         // Extract actual UDP payload
         let payload = data[offset...]
         
+        // Keep original address info for response (we need addressType and the raw address portion)
+        let addressData = data[3..<offset] // From ATYP to end of port
+        
         // Forward to target
-        forwardUDPPacket(payload: Data(payload), to: targetHost, port: targetPort, replyTo: sourceConnection)
+        forwardUDPPacket(payload: Data(payload), to: targetHost, port: targetPort, replyTo: sourceConnection, originalAddressData: addressData)
     }
     
-    private func forwardUDPPacket(payload: Data, to host: NWEndpoint.Host, port: NWEndpoint.Port, replyTo sourceConnection: NWConnection) {
+    private func forwardUDPPacket(payload: Data, to host: NWEndpoint.Host, port: NWEndpoint.Port, replyTo sourceConnection: NWConnection, originalAddressData: Data) {
         let parameters = NWParameters.udp
         let connection = NWConnection(host: host, port: port, using: parameters)
         
@@ -821,7 +824,7 @@ class SOCKS5ServerManager: ObservableObject {
                     self?.bytesLock.unlock()
                     
                     // Wait for response
-                    self?.receiveUDPResponse(connection, replyTo: sourceConnection, originalHost: host, originalPort: port)
+                    self?.receiveUDPResponse(connection, replyTo: sourceConnection, originalAddressData: originalAddressData)
                 })
             case .failed(let error):
                 print("UDP forward connection failed: \(error)")
@@ -833,7 +836,7 @@ class SOCKS5ServerManager: ObservableObject {
         connection.start(queue: udpQueue)
     }
     
-    private func receiveUDPResponse(_ connection: NWConnection, replyTo sourceConnection: NWConnection, originalHost: NWEndpoint.Host, originalPort: NWEndpoint.Port) {
+    private func receiveUDPResponse(_ connection: NWConnection, replyTo sourceConnection: NWConnection, originalAddressData: Data) {
         connection.receiveMessage { [weak self] data, context, isComplete, error in
             guard let self = self else { return }
             
@@ -848,34 +851,19 @@ class SOCKS5ServerManager: ObservableObject {
                 return
             }
             
-            // Track upload bytes for response
+            // Track download bytes for response from target
             self.bytesLock.lock()
-            self.pendingUploadBytes += Int64(data.count)
+            self.pendingDownloadBytes += Int64(data.count)
             self.bytesLock.unlock()
             
             // Build SOCKS5 UDP response packet
+            // +----+------+------+----------+----------+----------+
+            // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+            // +----+------+------+----------+----------+----------+
             var response = Data([0x00, 0x00, 0x00]) // RSV + FRAG
             
-            // Add address type and address
-            if let hostString = originalHost.debugDescription.split(separator: ":").first.map(String.init) {
-                // Try to determine if IPv4 or domain
-                if hostString.split(separator: ".").count == 4 {
-                    // IPv4
-                    response.append(0x01)
-                    if let ipData = self.ipv4StringToData(hostString) {
-                        response.append(ipData)
-                    }
-                } else {
-                    // Domain name
-                    response.append(0x03)
-                    response.append(UInt8(hostString.count))
-                    response.append(hostString.data(using: .utf8) ?? Data())
-                }
-            }
-            
-            // Add port
-            let portBytes = withUnsafeBytes(of: originalPort.rawValue.bigEndian) { Data($0) }
-            response.append(portBytes)
+            // Append original address data (includes ATYP, address, and port)
+            response.append(originalAddressData)
             
             // Add payload
             response.append(data)
