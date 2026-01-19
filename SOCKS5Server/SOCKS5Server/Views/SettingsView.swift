@@ -74,7 +74,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Proxy Type")
                 } footer: {
-                    Text("Choose the proxy protocol for your server. SOCKS5 is more versatile, HTTP is optimized for web traffic.")
+                    Text("Choose the proxy protocol for your server. SOCKS5 is more versatile, HTTP is optimized for web traffic. Restart the server for changes to take effect.")
                 }
                 
                 // Background Awake Method Section
