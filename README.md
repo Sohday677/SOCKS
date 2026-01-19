@@ -9,7 +9,9 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 
 ## ✨ Features
 
-- **Native SOCKS5 Server**: Full implementation of the SOCKS5 protocol
+- **Native SOCKS5 Server**: Full implementation of the SOCKS5 protocol with TCP and UDP support
+- **TCP CONNECT Support**: Standard TCP proxy connections for HTTP/HTTPS and other TCP traffic
+- **UDP ASSOCIATE Support**: UDP relay support for DNS queries, gaming, VoIP, and other UDP applications
 - **Clean SwiftUI Interface**: Modern, intuitive design with live statistics
 - **One-Tap Control**: Start/Stop server with a single tap
 - **Auto IP Detection**: Automatically detects your local network IP
@@ -23,12 +25,33 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 
 The app features a clean, card-based interface with:
 - Server status display (running/stopped indicator)
-- IP address and port information
+- IP address, TCP port, and UDP port information
 - Live upload/download statistics (Mbps)
 - Configuration options
 - Start/Stop control button
 - Settings page for auto-start and background options
 - Help menu with setup instructions
+
+## 🔌 Protocol Support
+
+### TCP CONNECT (Command 0x01)
+The server supports the standard SOCKS5 CONNECT command for TCP connections:
+- HTTP/HTTPS proxying
+- TCP-based applications
+- Standard web browsing
+- Any TCP traffic
+
+### UDP ASSOCIATE (Command 0x03)
+The server also supports UDP ASSOCIATE for UDP relay:
+- DNS queries
+- Online gaming traffic
+- VoIP applications (voice/video calls)
+- Streaming protocols that use UDP
+- Any UDP-based application
+
+**Default Ports:**
+- TCP Control Port: 4884 (configurable)
+- UDP Relay Port: 4885 (automatically configured)
 
 ## 🚀 How to Use
 
