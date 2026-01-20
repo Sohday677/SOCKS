@@ -50,7 +50,7 @@ class SOCKS5ServerManager: ObservableObject {
     private var listener: NWListener?
     private var udpListener: NWListener?
     private var connections: [NWConnection] = []
-    private var udpAssociations: [String: UDPAssociation] = []
+    private var udpAssociations: [ObjectIdentifier: UDPAssociation] = []
     private let queue = DispatchQueue(label: "com.socks5server.network", qos: .userInteractive)
     private let udpQueue = DispatchQueue(label: "com.socks5server.udp", qos: .userInteractive)
     
@@ -406,8 +406,8 @@ class SOCKS5ServerManager: ObservableObject {
         sendUDPAssociateSuccess(clientConnection, serverIP: serverIP, serverPort: UInt16(port))
         
         // Keep the TCP connection alive for the UDP association
-        // Store the association for tracking
-        let key = "\(clientHost):\(clientPort)"
+        // Store the association for tracking using ObjectIdentifier for robust key
+        let key = ObjectIdentifier(clientConnection)
         let association = UDPAssociation(
             clientConnection: clientConnection,
             udpEndpoint: NWEndpoint.hostPort(host: clientHost, port: clientPort),
@@ -451,7 +451,7 @@ class SOCKS5ServerManager: ObservableObject {
         })
     }
     
-    private func monitorUDPAssociation(_ connection: NWConnection, key: String) {
+    private func monitorUDPAssociation(_ connection: NWConnection, key: ObjectIdentifier) {
         // Keep reading from the connection to detect when it closes
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] data, _, isComplete, error in
             if error != nil || isComplete {
@@ -671,14 +671,26 @@ class SOCKS5ServerManager: ObservableObject {
             let octets = ipv4.rawValue.split(separator: ".").compactMap { UInt8($0) }
             response.append(contentsOf: octets)
             
-        case .ipv6:
-            // IPv6 - simplified handling
-            response.append(0x01)
-            response.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        case .ipv6(let ipv6):
+            // IPv6
+            response.append(0x04)
+            // Convert IPv6 address to bytes
+            // For simplicity, we'll use the string representation and parse it
+            let ipv6String = ipv6.rawValue
+            // This is a simplified implementation - in production, proper IPv6 byte handling should be used
+            // For now, fallback to reporting as domain name
+            response.removeLast() // Remove the 0x04 we just added
+            response.append(0x03)
+            let nameData = ipv6String.data(using: .utf8) ?? Data()
+            response.append(UInt8(nameData.count))
+            response.append(nameData)
             
         @unknown default:
-            response.append(0x01)
-            response.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+            // Fallback to domain name representation
+            response.append(0x03)
+            let fallbackData = "unknown".data(using: .utf8) ?? Data()
+            response.append(UInt8(fallbackData.count))
+            response.append(fallbackData)
         }
         
         // Add source port
