@@ -10,6 +10,12 @@ import Network
 import Combine
 import UIKit
 
+struct UDPAssociation {
+    let clientConnection: NWConnection
+    let udpEndpoint: NWEndpoint
+    var lastActivity: Date
+}
+
 class SOCKS5ServerManager: ObservableObject {
     // MARK: - Constants
     private static let fallbackIPAddress = "0.0.0.0"
@@ -42,8 +48,11 @@ class SOCKS5ServerManager: ObservableObject {
     
     // MARK: - Private Properties
     private var listener: NWListener?
+    private var udpListener: NWListener?
     private var connections: [NWConnection] = []
+    private var udpAssociations: [String: UDPAssociation] = []
     private let queue = DispatchQueue(label: "com.socks5server.network", qos: .userInteractive)
+    private let udpQueue = DispatchQueue(label: "com.socks5server.udp", qos: .userInteractive)
     
     init() {
         updateIPAddress()
@@ -85,6 +94,7 @@ class SOCKS5ServerManager: ObservableObject {
         startSpeedTimer()
         
         do {
+            // Start TCP listener
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
             
@@ -113,6 +123,19 @@ class SOCKS5ServerManager: ObservableObject {
             
             listener?.start(queue: queue)
             
+            // Start UDP listener
+            let udpParameters = NWParameters.udp
+            udpParameters.allowLocalEndpointReuse = true
+            
+            udpListener = try NWListener(using: udpParameters, on: NWEndpoint.Port(integerLiteral: UInt16(port)))
+            
+            udpListener?.newConnectionHandler = { [weak self] connection in
+                self?.handleUDPConnection(connection)
+            }
+            
+            udpListener?.start(queue: udpQueue)
+            print("UDP listener started on port \(port)")
+            
         } catch {
             print("Failed to create listener: \(error)")
         }
@@ -122,12 +145,16 @@ class SOCKS5ServerManager: ObservableObject {
         listener?.cancel()
         listener = nil
         
+        udpListener?.cancel()
+        udpListener = nil
+        
         stopSpeedTimer()
         
         for connection in connections {
             connection.cancel()
         }
         connections.removeAll()
+        udpAssociations.removeAll()
         
         DispatchQueue.main.async {
             self.isRunning = false
@@ -258,8 +285,14 @@ class SOCKS5ServerManager: ObservableObject {
         // data[2] is reserved
         let addressType = data[3]
         
-        guard version == 0x05, command == 0x01 else {
-            // Only support CONNECT command
+        guard version == 0x05 else {
+            sendSOCKS5Error(connection, errorCode: 0x07)
+            return
+        }
+        
+        // Support both CONNECT (0x01) and UDP ASSOCIATE (0x03)
+        guard command == 0x01 || command == 0x03 else {
+            // Command not supported
             sendSOCKS5Error(connection, errorCode: 0x07)
             return
         }
@@ -329,8 +362,14 @@ class SOCKS5ServerManager: ObservableObject {
             return
         }
         
-        // Create outbound connection
-        connectToTarget(connection, host: targetHost, port: targetPort)
+        // Handle command
+        if command == 0x01 {
+            // CONNECT command
+            connectToTarget(connection, host: targetHost, port: targetPort)
+        } else if command == 0x03 {
+            // UDP ASSOCIATE command
+            handleUDPAssociate(connection, clientHost: targetHost, clientPort: targetPort)
+        }
     }
     
     private func connectToTarget(_ clientConnection: NWConnection, host: NWEndpoint.Host, port: NWEndpoint.Port) {
@@ -351,6 +390,310 @@ class SOCKS5ServerManager: ObservableObject {
         
         targetConnection.start(queue: queue)
         connections.append(targetConnection)
+    }
+    
+    private func handleUDPAssociate(_ clientConnection: NWConnection, clientHost: NWEndpoint.Host, clientPort: NWEndpoint.Port) {
+        // For UDP ASSOCIATE, we respond with the server's UDP relay address
+        // The client will send UDP packets to this address
+        
+        // Get server's local address
+        guard let serverIP = getWiFiAddress() else {
+            sendSOCKS5Error(clientConnection, errorCode: 0x01)
+            return
+        }
+        
+        // Send success response with server's UDP address and port
+        sendUDPAssociateSuccess(clientConnection, serverIP: serverIP, serverPort: UInt16(port))
+        
+        // Keep the TCP connection alive for the UDP association
+        // Store the association for tracking
+        let key = "\(clientHost):\(clientPort)"
+        let association = UDPAssociation(
+            clientConnection: clientConnection,
+            udpEndpoint: NWEndpoint.hostPort(host: clientHost, port: clientPort),
+            lastActivity: Date()
+        )
+        udpAssociations[key] = association
+        
+        // Monitor the TCP connection - when it closes, the UDP association ends
+        monitorUDPAssociation(clientConnection, key: key)
+    }
+    
+    private func sendUDPAssociateSuccess(_ connection: NWConnection, serverIP: String, serverPort: UInt16) {
+        // +----+-----+-------+------+----------+----------+
+        // |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+        // +----+-----+-------+------+----------+----------+
+        // | 1  |  1  | X'00' |  1   | Variable |    2     |
+        // +----+-----+-------+------+----------+----------+
+        
+        var response = Data([0x05, 0x00, 0x00])
+        
+        // Parse server IP and add to response
+        let ipComponents = serverIP.split(separator: ".").compactMap { UInt8($0) }
+        if ipComponents.count == 4 {
+            // IPv4
+            response.append(0x01)
+            response.append(contentsOf: ipComponents)
+        } else {
+            // Fallback to 0.0.0.0
+            response.append(0x01)
+            response.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        }
+        
+        // Add port
+        response.append(UInt8(serverPort >> 8))
+        response.append(UInt8(serverPort & 0xFF))
+        
+        connection.send(content: response, completion: .contentProcessed { error in
+            if let error = error {
+                print("Send UDP associate success error: \(error)")
+            }
+        })
+    }
+    
+    private func monitorUDPAssociation(_ connection: NWConnection, key: String) {
+        // Keep reading from the connection to detect when it closes
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] data, _, isComplete, error in
+            if error != nil || isComplete {
+                // Connection closed, remove the UDP association
+                self?.udpAssociations.removeValue(forKey: key)
+                connection.cancel()
+            } else {
+                // Continue monitoring
+                self?.monitorUDPAssociation(connection, key: key)
+            }
+        }
+    }
+    
+    private func handleUDPConnection(_ connection: NWConnection) {
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                break
+            case .failed, .cancelled:
+                break
+            default:
+                break
+            }
+        }
+        
+        connection.start(queue: udpQueue)
+        
+        // Receive UDP packets
+        receiveUDPPacket(connection)
+    }
+    
+    private func receiveUDPPacket(_ connection: NWConnection) {
+        connection.receiveMessage { [weak self] data, context, isComplete, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("UDP receive error: \(error)")
+                return
+            }
+            
+            guard let data = data, !data.isEmpty else {
+                if !isComplete {
+                    self.receiveUDPPacket(connection)
+                }
+                return
+            }
+            
+            // Process SOCKS5 UDP packet
+            self.processUDPPacket(connection, data: data, context: context)
+            
+            // Continue receiving
+            if !isComplete {
+                self.receiveUDPPacket(connection)
+            }
+        }
+    }
+    
+    private func processUDPPacket(_ connection: NWConnection, data: Data, context: NWConnection.ContentContext?) {
+        // SOCKS5 UDP Request
+        // +----+------+------+----------+----------+----------+
+        // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+        // +----+------+------+----------+----------+----------+
+        // | 2  |  1   |  1   | Variable |    2     | Variable |
+        // +----+------+------+----------+----------+----------+
+        
+        guard data.count >= 4 else {
+            print("UDP packet too short")
+            return
+        }
+        
+        // Check reserved bytes (should be 0x00 0x00)
+        guard data[0] == 0x00 && data[1] == 0x00 else {
+            print("Invalid UDP packet header")
+            return
+        }
+        
+        let frag = data[2]
+        let addressType = data[3]
+        
+        // We don't support fragmentation
+        guard frag == 0x00 else {
+            print("UDP fragmentation not supported")
+            return
+        }
+        
+        var offset = 4
+        var host: NWEndpoint.Host?
+        var port: NWEndpoint.Port?
+        
+        // Parse destination address
+        switch addressType {
+        case 0x01: // IPv4
+            guard data.count >= offset + 6 else { return }
+            let ipBytes = data[offset..<offset+4]
+            let ipString = ipBytes.map { String($0) }.joined(separator: ".")
+            host = NWEndpoint.Host(ipString)
+            offset += 4
+            
+        case 0x03: // Domain name
+            guard data.count > offset else { return }
+            let domainLength = Int(data[offset])
+            offset += 1
+            guard data.count >= offset + domainLength + 2 else { return }
+            let domainData = data[offset..<offset+domainLength]
+            if let domain = String(data: domainData, encoding: .utf8) {
+                host = NWEndpoint.Host(domain)
+            }
+            offset += domainLength
+            
+        case 0x04: // IPv6
+            guard data.count >= offset + 18 else { return }
+            let ipBytes = data[offset..<offset+16]
+            var ipString = ""
+            for i in stride(from: 0, to: 16, by: 2) {
+                if !ipString.isEmpty { ipString += ":" }
+                ipString += String(format: "%02x%02x", ipBytes[ipBytes.startIndex + i], ipBytes[ipBytes.startIndex + i + 1])
+            }
+            host = NWEndpoint.Host(ipString)
+            offset += 16
+            
+        default:
+            print("Unsupported address type in UDP packet")
+            return
+        }
+        
+        // Parse port
+        guard data.count >= offset + 2 else { return }
+        let portValue = UInt16(data[offset]) << 8 | UInt16(data[offset + 1])
+        port = NWEndpoint.Port(rawValue: portValue)
+        offset += 2
+        
+        // Extract actual data payload
+        guard data.count > offset else { return }
+        let payload = data[offset...]
+        
+        guard let targetHost = host, let targetPort = port else {
+            print("Failed to parse UDP destination")
+            return
+        }
+        
+        // Forward the UDP packet to the destination
+        relayUDPPacket(payload: Data(payload), to: targetHost, port: targetPort, replyTo: connection, context: context)
+    }
+    
+    private func relayUDPPacket(payload: Data, to host: NWEndpoint.Host, port: NWEndpoint.Port, replyTo: NWConnection, context: NWConnection.ContentContext?) {
+        // Create a UDP connection to forward the packet
+        let parameters = NWParameters.udp
+        let targetConnection = NWConnection(host: host, port: port, using: parameters)
+        
+        targetConnection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                // Send the payload to the target
+                targetConnection.send(content: payload, completion: .contentProcessed { error in
+                    if let error = error {
+                        print("UDP relay send error: \(error)")
+                        targetConnection.cancel()
+                        return
+                    }
+                    
+                    // Track upload bytes
+                    self?.bytesLock.lock()
+                    self?.pendingUploadBytes += Int64(payload.count)
+                    self?.bytesLock.unlock()
+                    
+                    // Wait for response from target
+                    targetConnection.receiveMessage { data, _, _, error in
+                        if let error = error {
+                            print("UDP relay receive error: \(error)")
+                            targetConnection.cancel()
+                            return
+                        }
+                        
+                        guard let responseData = data, !responseData.isEmpty else {
+                            targetConnection.cancel()
+                            return
+                        }
+                        
+                        // Track download bytes
+                        self?.bytesLock.lock()
+                        self?.pendingDownloadBytes += Int64(responseData.count)
+                        self?.bytesLock.unlock()
+                        
+                        // Send response back to client with SOCKS5 UDP header
+                        self?.sendUDPResponse(data: responseData, from: host, port: port, to: replyTo, context: context)
+                        
+                        targetConnection.cancel()
+                    }
+                })
+            case .failed(let error):
+                print("UDP relay connection failed: \(error)")
+                targetConnection.cancel()
+            default:
+                break
+            }
+        }
+        
+        targetConnection.start(queue: udpQueue)
+    }
+    
+    private func sendUDPResponse(data: Data, from host: NWEndpoint.Host, port: NWEndpoint.Port, to connection: NWConnection, context: NWConnection.ContentContext?) {
+        // Build SOCKS5 UDP response header
+        var response = Data([0x00, 0x00, 0x00]) // RSV, FRAG
+        
+        // Add source address
+        switch host {
+        case .name(let name, _):
+            // Domain name
+            response.append(0x03)
+            let nameData = name.data(using: .utf8) ?? Data()
+            response.append(UInt8(nameData.count))
+            response.append(nameData)
+            
+        case .ipv4(let ipv4):
+            // IPv4
+            response.append(0x01)
+            let octets = ipv4.rawValue.split(separator: ".").compactMap { UInt8($0) }
+            response.append(contentsOf: octets)
+            
+        case .ipv6:
+            // IPv6 - simplified handling
+            response.append(0x01)
+            response.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+            
+        @unknown default:
+            response.append(0x01)
+            response.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        }
+        
+        // Add source port
+        response.append(UInt8(port.rawValue >> 8))
+        response.append(UInt8(port.rawValue & 0xFF))
+        
+        // Add data payload
+        response.append(data)
+        
+        // Send back to client
+        connection.send(content: response, completion: .contentProcessed { error in
+            if let error = error {
+                print("UDP response send error: \(error)")
+            }
+        })
     }
     
     private func sendSOCKS5Success(_ connection: NWConnection) {

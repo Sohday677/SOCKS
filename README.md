@@ -9,7 +9,7 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 
 ## ✨ Features
 
-- **Native SOCKS5 Server**: Full implementation of the SOCKS5 protocol
+- **Native SOCKS5 Server**: Full implementation of the SOCKS5 protocol with TCP CONNECT and UDP ASSOCIATE support
 - **Clean SwiftUI Interface**: Modern, intuitive design with live statistics
 - **One-Tap Control**: Start/Stop server with a single tap
 - **Auto IP Detection**: Automatically detects your local network IP
@@ -18,6 +18,7 @@ A clean and intuitive iOS app that turns your iPhone into a SOCKS5 proxy server,
 - **Background Modes**: Multiple options to keep the app active (Location, Silent Audio)
 - **Comprehensive Help Menu**: Step-by-step setup guide with GL.iNet router instructions
 - **Copy Configuration**: Easy copy of proxy settings to clipboard
+- **UDP Support**: Full UDP ASSOCIATE support for applications requiring UDP relay
 
 ## 📱 Screenshots
 
