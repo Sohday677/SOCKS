@@ -15,6 +15,7 @@
 		A10000000000000000000006 /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* SettingsManager.swift */; };
 		A10000000000000000000007 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SettingsView.swift */; };
 		A10000000000000000000008 /* BackgroundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* BackgroundManager.swift */; };
+		A10000000000000000000009 /* ProxyActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* ProxyActivityAttributes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		A20000000000000000000006 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000008 /* BackgroundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* ProxyActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyActivityAttributes.swift; sourceTree = "<group>"; };
 		A30000000000000000000001 /* SOCKS5Server.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SOCKS5Server.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -83,6 +85,7 @@
 				A20000000000000000000004 /* SOCKS5ServerManager.swift */,
 				A20000000000000000000006 /* SettingsManager.swift */,
 				A20000000000000000000008 /* BackgroundManager.swift */,
+				A20000000000000000000009 /* ProxyActivityAttributes.swift */,
 			);
 			path = Server;
 			sourceTree = "<group>";
@@ -163,6 +166,7 @@
 				A10000000000000000000006 /* SettingsManager.swift in Sources */,
 				A10000000000000000000007 /* SettingsView.swift in Sources */,
 				A10000000000000000000008 /* BackgroundManager.swift in Sources */,
+				A10000000000000000000009 /* ProxyActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

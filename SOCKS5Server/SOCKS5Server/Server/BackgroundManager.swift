@@ -10,10 +10,21 @@ import CoreLocation
 import AVFoundation
 import Combine
 import UIKit
+import ActivityKit
+import UserNotifications
 
 class BackgroundManager: NSObject, ObservableObject {
+    // MARK: - Constants
+    private enum Constants {
+        static let disconnectionNotificationId = "proxy-disconnection"
+        static let stoppedStatusText = "Stopped"
+        static let stoppedIPAddress = "—"
+        static let stoppedPort = 0
+    }
+    
     // MARK: - Published Properties
     @Published var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published var notificationPermissionGranted: Bool = false
     
     // MARK: - Private Properties
     private var locationManager: CLLocationManager?
@@ -22,9 +33,35 @@ class BackgroundManager: NSObject, ObservableObject {
     private var currentMethod: BackgroundAwakeMethod = .none
     private var cancellables = Set<AnyCancellable>()
     
+    // Live Activity for Dynamic Island
+    private var currentActivity: Activity<ProxyActivityAttributes>?
+    
     override init() {
         super.init()
         setupLocationManager()
+        setupNotifications()
+    }
+    
+    // MARK: - Notification Setup
+    private func setupNotifications() {
+        // Check current notification permission status
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                self?.notificationPermissionGranted = settings.authorizationStatus == .authorized
+            }
+        }
+    }
+    
+    /// Request notification permission (called automatically when location method is selected)
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
+            DispatchQueue.main.async {
+                self?.notificationPermissionGranted = granted
+                if let error = error {
+                    print("BackgroundManager: Notification permission error: \(error.localizedDescription)")
+                }
+            }
+        }
     }
     
     // MARK: - Location Manager Setup
@@ -47,7 +84,12 @@ class BackgroundManager: NSObject, ObservableObject {
     }
     
     /// Start the specified background method
-    func startBackgroundMethod(_ method: BackgroundAwakeMethod) {
+    /// - Parameters:
+    ///   - method: The background awake method to use
+    ///   - ipAddress: Optional IP address for Live Activity (location mode)
+    ///   - port: Optional port for Live Activity (location mode)
+    ///   - enableDynamicIsland: Whether Dynamic Island display is enabled (default: false)
+    func startBackgroundMethod(_ method: BackgroundAwakeMethod, ipAddress: String? = nil, port: Int? = nil, enableDynamicIsland: Bool = false) {
         // Stop any existing method first
         stopBackgroundMethod()
         
@@ -55,7 +97,13 @@ class BackgroundManager: NSObject, ObservableObject {
         
         switch method {
         case .location:
+            // Request notification permission automatically for location mode
+            requestNotificationPermission()
             startLocationUpdates()
+            // Start Live Activity for Dynamic Island if enabled and IP and port are provided
+            if enableDynamicIsland, let ip = ipAddress, let p = port {
+                startLiveActivity(ipAddress: ip, port: p)
+            }
         case .audio:
             startSilentAudio()
         case .none:
@@ -64,7 +112,16 @@ class BackgroundManager: NSObject, ObservableObject {
     }
     
     /// Stop the current background method
-    func stopBackgroundMethod() {
+    /// - Parameter sendNotification: Whether to send a disconnection notification (default: false)
+    func stopBackgroundMethod(sendNotification: Bool = false) {
+        // End Live Activity if it was running
+        endLiveActivity()
+        
+        // Send disconnection notification if requested and location method was active
+        if sendNotification && currentMethod == .location {
+            sendDisconnectionNotification()
+        }
+        
         stopLocationUpdates()
         stopSilentAudio()
         currentMethod = .none
@@ -189,6 +246,139 @@ class BackgroundManager: NSObject, ObservableObject {
         }
         
         print("BackgroundManager: Stopped silent audio")
+    }
+    
+    // MARK: - Live Activity (Dynamic Island) for Location Mode
+    
+    /// Helper method to format status text for Live Activity
+    /// - Parameters:
+    ///   - connectedClients: Number of connected clients
+    ///   - isActive: Whether the server is active
+    /// - Returns: Formatted status text
+    private func formatStatusText(connectedClients: Int, isActive: Bool) -> String {
+        if !isActive {
+            return "Disconnected"
+        }
+        return connectedClients > 0 ? "\(connectedClients) client\(connectedClients == 1 ? "" : "s")" : "Active"
+    }
+    
+    /// Start Live Activity for Dynamic Island navigation-style display
+    /// - Parameters:
+    ///   - ipAddress: The IP address of the proxy server
+    ///   - port: The port of the proxy server
+    ///   - connectedClients: Number of connected clients
+    func startLiveActivity(ipAddress: String, port: Int, connectedClients: Int = 0) {
+        // Only start if location method is active and Live Activities are supported
+        guard currentMethod == .location else { return }
+        
+        if #available(iOS 16.1, *) {
+            guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+                print("BackgroundManager: Live Activities not enabled")
+                return
+            }
+            
+            // End any existing activity first
+            endLiveActivity()
+            
+            let attributes = ProxyActivityAttributes(serverName: "SOCKS5 Proxy")
+            let contentState = ProxyActivityAttributes.ContentState(
+                isActive: true,
+                statusText: formatStatusText(connectedClients: connectedClients, isActive: true),
+                ipAddress: ipAddress,
+                port: port
+            )
+            
+            do {
+                let activity = try Activity.request(
+                    attributes: attributes,
+                    content: .init(state: contentState, staleDate: nil),
+                    pushType: nil
+                )
+                currentActivity = activity
+                print("BackgroundManager: Started Live Activity with ID: \(activity.id)")
+            } catch {
+                print("BackgroundManager: Failed to start Live Activity: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    /// Update the Live Activity with new status
+    /// - Parameters:
+    ///   - ipAddress: The IP address of the proxy server
+    ///   - port: The port of the proxy server
+    ///   - connectedClients: Number of connected clients
+    ///   - isActive: Whether the server is still active
+    func updateLiveActivity(ipAddress: String, port: Int, connectedClients: Int, isActive: Bool = true) {
+        if #available(iOS 16.1, *) {
+            guard let activity = currentActivity else { return }
+            
+            let contentState = ProxyActivityAttributes.ContentState(
+                isActive: isActive,
+                statusText: formatStatusText(connectedClients: connectedClients, isActive: isActive),
+                ipAddress: ipAddress,
+                port: port
+            )
+            
+            Task {
+                await activity.update(using: contentState)
+            }
+        }
+    }
+    
+    /// End the current Live Activity
+    func endLiveActivity() {
+        if #available(iOS 16.1, *) {
+            guard let activity = currentActivity else { return }
+            
+            let finalState = ProxyActivityAttributes.ContentState(
+                isActive: false,
+                statusText: Constants.stoppedStatusText,
+                ipAddress: Constants.stoppedIPAddress,
+                port: Constants.stoppedPort
+            )
+            
+            Task {
+                await activity.end(using: finalState, dismissalPolicy: .immediate)
+                await MainActor.run {
+                    self.currentActivity = nil
+                }
+                print("BackgroundManager: Ended Live Activity")
+            }
+        }
+    }
+    
+    // MARK: - Disconnection Notification
+    
+    /// Send a notification when the proxy server disconnects or stops
+    /// - Parameter reason: Optional reason for the disconnection
+    func sendDisconnectionNotification(reason: String? = nil) {
+        guard notificationPermissionGranted else {
+            // Permission not granted, cannot send notification
+            // Don't request permission here as it's too late - it should have been requested earlier
+            print("BackgroundManager: Cannot send notification - permission not granted")
+            return
+        }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "SOCKS5 Proxy Stopped"
+        content.body = reason ?? "The proxy server has been disconnected."
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        
+        // Use fixed identifier to allow replacing previous notification
+        let request = UNNotificationRequest(
+            identifier: Constants.disconnectionNotificationId,
+            content: content,
+            trigger: nil // Deliver immediately
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("BackgroundManager: Failed to send disconnection notification: \(error.localizedDescription)")
+            } else {
+                print("BackgroundManager: Sent disconnection notification")
+            }
+        }
     }
 }
 
